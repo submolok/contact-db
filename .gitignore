@@ -1,0 +1,24 @@
+# environment & secrets
+venv/
+.env
+
+# database
+*.db
+
+# python
+__pycache__/
+*.pyc
+
+# logs
+logs/
+mobile/logs/
+
+# junk/dev files
+old/
+1.jpg
+output.txt
+test_script.py
+sql_script.py
+templates/venv/
+templates/old2index.html
+templates/oldindex.html

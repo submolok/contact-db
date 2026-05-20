@@ -1,0 +1,2631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contact Database</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Barlow+Condensed:wght@300;400;500;600;700;800&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+/* ── RESET & BASE ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  body.dark {
+  --bg:       #0a0b0d;
+  --bg2:      #111318;
+  --bg3:      #181c23;
+  --border:   #242830;
+  --border2:  #2e3440;
+  --amber:    #f5a623;
+  --amber2:   #ffbe4f;
+  --amber-dim:#7a5210;
+  --red:      #e05a4e;
+  --green:    #4caf74;
+  --blue:     #4a8fe8;
+  --text:     #dde2ec;
+  --text2:    #8b93a6;
+  --text3:    #5a6070;
+  --terminal-bg: #2a313f;
+  --terminal-text: #8bc34a;
+  }
+  body.light {
+  --bg:       #ffffff;
+  --bg2:      #f4f5f7;
+  --bg3:      #e8eaed;
+  --border:   #d1d5db;
+  --border2:  #b0b7c3;
+  --amber:    #f5a623;
+  --amber2:   #ffbe4f;
+  --amber-dim:#7a5210;
+  --red:      #e05a4e;
+  --green:    #4caf74;
+  --blue:     #4a8fe8;
+  --text:     #111318;
+  --text2:    #3a4050;
+  --text3:    #6b7280;
+  --terminal-bg: #1e2030;
+  --terminal-text: #a6da95;
+}
+  /* --bg:       #0a0b0d;
+  --bg2:      #111318;
+  --bg3:      #181c23;
+  --border:   #242830;
+  --border2:  #2e3440;
+  --text:     #dde2ec;
+  --text2:    #8b93a6;
+  --text3:    #5a6070; */
+  --mono:     'Space Mono', monospace;
+  --sans:     'Barlow', sans-serif;
+  --cond:     'Barlow Condensed', sans-serif;
+}
+html { font-size: 16px; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+a { color: inherit; text-decoration: none; }
+button { cursor: pointer; font-family: inherit; }
+input, select, textarea { font-family: inherit; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* ── LAYOUT ───────────────────────────────────────────────────────────────── */
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+/* topbar */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 52px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+.topbar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.logo-mark {
+  width: 28px; height: 28px;
+  background: var(--amber);
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  flex-shrink: 0;
+}
+.logo-name {
+  font-family: var(--cond);
+  font-weight: 800;
+  font-size: 1.3rem;
+  letter-spacing: 0.05em;
+  color: var(--text);
+}
+.logo-name span { color: var(--amber); }
+.logo-sub {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--text3);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-top: 1px;
+}
+.topbar-stats {
+  display: flex;
+  gap: 24px;
+}
+.stat-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.stat-pill .val {
+  font-family: var(--cond);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--amber);
+  line-height: 1;
+}
+.stat-pill .lbl {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  color: var(--text3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* tab bar */
+.tabbar {
+  display: flex;
+  gap: 0;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  padding: 0 16px;
+}
+.tab-btn {
+  padding: 0 20px;
+  height: 40px;
+  background: none;
+  border: none;
+  color: var(--text3);
+  font-family: var(--cond);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  position: relative;
+  top: 1px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--amber); border-bottom-color: var(--amber); }
+.tab-icon { font-size: 0.8rem; }
+
+/* panels */
+.panels { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.panel { display: none; flex: 1; overflow: hidden; }
+.panel.active { display: flex; }
+
+/* ── DATABASE PANEL ───────────────────────────────────────────────────────── */
+#panel-db {
+  flex-direction: row;
+}
+
+/* sidebar */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-head {
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sidebar-title {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.cat-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: background 0.1s;
+  user-select: none;
+}
+.cat-item:hover { background: var(--bg3); }
+.cat-item input[type=checkbox] {
+  width: 13px; height: 13px;
+  accent-color: var(--amber);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.cat-label {
+  font-family: var(--cond);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text2);
+  line-height: 1.2;
+  flex: 1;
+}
+.cat-count {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--text3);
+}
+.cat-item.checked .cat-label { color: var(--amber2); }
+.sidebar-footer {
+  border-top: 1px solid var(--border);
+  padding: 8px 14px;
+  flex-shrink: 0;
+}
+.btn-clear {
+  width: 100%;
+  padding: 6px;
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--text3);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 2px;
+  transition: all 0.15s;
+}
+.btn-clear:hover {
+  border-color: var(--amber-dim);
+  color: var(--amber);
+}
+
+/* main content */
+.db-main {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.search-wrap {
+  flex: 1;
+  position: relative;
+}
+.search-wrap::before {
+  content: "⌕";
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text3);
+  font-size: 1rem;
+  pointer-events: none;
+}
+.search-input {
+  width: 100%;
+  padding: 7px 10px 7px 30px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  border-radius: 2px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.search-input:focus { border-color: var(--amber-dim); }
+.search-input::placeholder { color: var(--text3); }
+
+.sort-select {
+  padding: 7px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.sort-select option { background: var(--bg2); }
+
+.result-count {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--text3);
+  white-space: nowrap;
+}
+
+/* table */
+.table-wrap {
+  flex: 1;
+  overflow: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+th {
+  padding: 9px 14px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+th:hover { color: var(--text2); }
+th.sorted { color: var(--amber); }
+td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  color: var(--text2);
+}
+tr:hover td { background: rgba(255,255,255,0.02); }
+tr.expanded td { background: rgba(245,166,35,0.04); }
+
+.td-name {
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.td-name:hover { color: var(--amber2); }
+.expand-arrow {
+  font-size: 0.6rem;
+  color: var(--text3);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.expanded .expand-arrow { transform: rotate(90deg); color: var(--amber); }
+
+.td-domain {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--blue);
+}
+.td-domain a:hover { text-decoration: underline; }
+
+.tag {
+  display: inline-block;
+  padding: 2px 7px;
+  font-family: var(--cond);
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 2px;
+  letter-spacing: 0.04em;
+  margin: 2px 2px 2px 0;
+}
+.tag-cat {
+  background: rgba(245,166,35,0.12);
+  color: var(--amber2);
+  border: 1px solid rgba(245,166,35,0.25);
+}
+.tag-type {
+  background: rgba(74,143,232,0.1);
+  color: #7ab4f5;
+  border: 1px solid rgba(74,143,232,0.2);
+}
+.tag-market {
+  background: rgba(76,175,116,0.1);
+  color: #7ecfa0;
+  border: 1px solid rgba(76,175,116,0.2);
+}
+
+/* expanded row */
+.expand-row { display: none; }
+.expand-row.open { display: table-row; }
+.expand-cell {
+  padding: 0 !important;
+  background: var(--bg2) !important;
+  border-bottom: 2px solid var(--amber-dim) !important;
+}
+.expand-inner {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0;
+  padding: 16px 20px 16px 32px;
+}
+.expand-section { padding-right: 20px; }
+.expand-section + .expand-section {
+  border-left: 1px solid var(--border);
+  padding-left: 20px;
+  padding-right: 0;
+}
+.expand-label {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 6px;
+}
+.expand-value {
+  font-size: 0.82rem;
+  color: var(--text2);
+  line-height: 1.4;
+}
+.person-card {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+.person-name {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.person-role {
+  font-size: 0.75rem;
+  color: var(--text3);
+  margin-bottom: 4px;
+}
+.person-contact {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--blue);
+  word-break: break-all;
+}
+.product-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.tag-product {
+  background: rgba(255,255,255,0.05);
+  color: var(--text2);
+  border: 1px solid var(--border2);
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 2px;
+  font-family: var(--cond);
+  font-weight: 500;
+}
+
+/* empty state */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text3);
+}
+.empty-state .empty-icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.4; }
+.empty-state p { font-family: var(--mono); font-size: 0.75rem; }
+
+/* loading */
+.loading-row td {
+  text-align: center;
+  padding: 40px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text3);
+}
+.spinner {
+  display: inline-block;
+  width: 16px; height: 16px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--amber);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── PIPELINE PANELS ──────────────────────────────────────────────────────── */
+#panel-ocr, #panel-enrich, #panel-normalize {
+  flex-direction: column;
+  padding: 24px;
+  gap: 16px;
+  overflow-y: auto;
+  background: var(--bg);
+}
+.pipeline-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.pipeline-title {
+  font-family: var(--cond);
+  font-weight: 800;
+  font-size: 1.6rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+}
+.pipeline-desc {
+  font-size: 0.82rem;
+  color: var(--text2);
+  margin-top: 3px;
+  max-width: 580px;
+  line-height: 1.5;
+}
+.pipeline-desc-narrow {
+  font-size: 0.9rem;  
+  color: var(--text2);
+  margin-top: 3px;
+  max-width: 500px;
+  line-height: 1.5;
+}
+
+.pipeline-form {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.form-group { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 200px; }
+.form-label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.form-input {
+  padding: 8px 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  border-radius: 2px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.form-input:focus { border-color: var(--amber-dim); }
+
+.btn-run {
+  padding: 8px 24px;
+  background: var(--amber);
+  color: #000;
+  border: none;
+  font-family: var(--cond);
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 2px;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  height: 36px;
+}
+.btn-run:hover { background: var(--amber2); }
+.btn-run:disabled {
+  background: var(--border2);
+  color: var(--text3);
+  cursor: not-allowed;
+}
+
+.terminal-wrap {
+  flex: 1;
+  min-height: 300px;
+  background: var(--terminal-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.terminal-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.term-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+}
+.term-dot.r { background: #e05a4e; }
+.term-dot.y { background: #f5a623; }
+.term-dot.g { background: #4caf74; }
+.terminal-label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--text3);
+  margin-left: 4px;
+  letter-spacing: 0.08em;
+}
+.terminal-status {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text3);
+}
+.status-dot.running {
+  background: var(--amber);
+  animation: pulse 1s ease-in-out infinite;
+}
+.status-dot.done { background: var(--green); }
+.status-dot.error { background: var(--red); }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.terminal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.7;
+  color: var(--terminal-text);
+}
+.terminal-body .t-line { display: block; word-break: break-all; }
+.terminal-body .t-err { color: var(--red); }
+.terminal-body .t-warn { color: var(--amber); }
+.terminal-body .t-done { color: var(--green); font-weight: 700; }
+.terminal-body .t-dim { color: var(--text3); }
+.terminal-body .t-prompt {
+  color: var(--text3);
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.term-cursor {
+  display: inline-block;
+  width: 7px; height: 13px;
+  background: var(--amber);
+  opacity: 0;
+  vertical-align: middle;
+  animation: blink 1s step-end infinite;
+}
+.running .term-cursor { opacity: 1; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.notes-cell {
+  width: 100%;
+  min-height: 36px;
+  max-height: 120px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--text2);
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  padding: 3px 6px;
+  resize: vertical;
+  transition: border-color 0.15s, background 0.15s;
+  overflow: hidden;
+}
+.notes-cell:hover {
+  border-color: var(--border2);
+  background: var(--bg3);
+  overflow: auto;
+}
+.notes-cell:focus {
+  outline: none;
+  border-color: var(--amber-dim);
+  background: var(--bg3);
+  overflow: auto;
+}
+.notes-cell::placeholder { color: var(--text3); font-style: italic; }
+.notes-saving { border-color: var(--amber-dim) !important; }
+.notes-saved { border-color: var(--green) !important; }
+
+
+.filter-section-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 8px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.filter-section-head:first-of-type { border-top: none; }
+.filter-section-head:hover { background: var(--bg3); }
+.section-arrow {
+  font-size: 0.5rem;
+  color: var(--text3);
+  transition: transform 0.2s;
+}
+.section-arrow.open { transform: rotate(90deg); color: var(--amber); }
+.filter-section-body {
+  overflow-y: auto;
+}
+
+.mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  padding: 3px;
+}
+.mode-btn {
+  padding: 5px 16px;
+  background: none;
+  border: none;
+  color: var(--text3);
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.mode-btn.active {
+  background: var(--amber);
+  color: #000;
+}
+
+
+/* ── NOTIFICATIONS PANEL ─────────────────────────────────────────────────── */
+#panel-notifications {
+  flex-direction: column;
+  overflow: hidden;
+}
+.notif-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.notif-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.notif-filter-label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--text3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+.notif-filter-btn {
+  padding: 3px 10px;
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--text3);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  border-radius: 2px;
+  transition: all 0.15s;
+  letter-spacing: 0.06em;
+}
+.notif-filter-btn:hover { color: var(--text2); border-color: var(--text3); }
+.notif-filter-btn.active { color: var(--amber); border-color: var(--amber-dim); background: rgba(245,166,35,0.08); }
+.notif-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--text3);
+}
+.notif-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.notif-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 12px 16px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: start;
+  transition: border-color 0.15s;
+}
+.notif-card:hover { border-color: var(--border2); }
+.notif-card-left { flex: 1; }
+.notif-company {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+.notif-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.notif-reason {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 2px;
+}
+.reason-no_category_match { background: rgba(245,166,35,0.12); color: var(--amber); border: 1px solid rgba(245,166,35,0.25); }
+.reason-scrape_failed     { background: rgba(224,90,78,0.12);  color: var(--red);   border: 1px solid rgba(224,90,78,0.25); }
+.reason-enrichment_failed { background: rgba(224,90,78,0.12);  color: var(--red);   border: 1px solid rgba(224,90,78,0.25); }
+.reason-no_domain         { background: rgba(139,147,166,0.1); color: var(--text3); border: 1px solid var(--border2); }
+.notif-domain {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--blue);
+}
+.notif-date {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--text3);
+}
+.notif-products {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 4px;
+}
+.notif-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+.notif-btn {
+  padding: 5px 12px;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  border-radius: 2px;
+  border: 1px solid var(--border2);
+  background: none;
+  color: var(--text2);
+  white-space: nowrap;
+  transition: all 0.15s;
+  min-width: 110px;
+  text-align: center;
+}
+.notif-btn:hover { background: var(--bg3); color: var(--text); }
+.notif-btn.gpt { border-color: var(--amber-dim); color: var(--amber); }
+.notif-btn.gpt:hover { background: rgba(245,166,35,0.1); }
+.notif-btn.dismiss { color: var(--text3); }
+.notif-btn.dismiss:hover { color: var(--red); border-color: var(--red); }
+.notif-assign-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+.notif-multiselect {
+  position: relative;
+}
+.notif-multiselect-trigger {
+  padding: 5px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  border-radius: 2px;
+  cursor: pointer;
+  min-width: 160px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.notif-multiselect-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 3px;
+  z-index: 100;
+  min-width: 220px;
+  max-height: 220px;
+  overflow-y: auto;
+  display: none;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+.notif-multiselect-dropdown.open { display: block; }
+.notif-multiselect-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-family: var(--cond);
+  font-size: 0.8rem;
+  color: var(--text2);
+  transition: background 0.1s;
+}
+.notif-multiselect-option:hover { background: var(--bg3); }
+.notif-multiselect-option input { accent-color: var(--amber); flex-shrink: 0; }
+.notif-multiselect-option.checked { color: var(--amber2); }
+.notif-btn-save {
+  padding: 5px 12px;
+  background: var(--amber);
+  color: #000;
+  border: none;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  border-radius: 2px;
+  letter-spacing: 0.06em;
+  transition: background 0.15s;
+}
+.notif-btn-save:hover { background: var(--amber2); }
+.notif-btn-save:disabled { background: var(--border2); color: var(--text3); cursor: not-allowed; }
+
+/* ── MODAL ───────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  padding: 24px;
+  width: 480px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.modal-title {
+  font-family: var(--cond);
+  font-weight: 800;
+  font-size: 1.2rem;
+  text-transform: uppercase;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.modal-sub {
+  font-size: 0.85rem;
+  color: var(--text3);
+  margin-bottom: 16px;
+}
+.modal-section-label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 6px;
+}
+.modal-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.modal-products {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--text3);
+  line-height: 1.6;
+  max-height: 120px;
+  overflow-y: auto;
+  background: var(--bg3);
+  padding: 8px 10px;
+  border-radius: 2px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.modal-btn-cancel {
+  padding: 7px 16px;
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  border-radius: 2px;
+}
+.modal-btn-cancel:hover { color: var(--text); }
+.modal-btn-confirm {
+  padding: 7px 16px;
+  background: var(--amber);
+  border: none;
+  color: #000;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 2px;
+}
+.modal-btn-confirm:hover { background: var(--amber2); }
+
+/* ── RESPONSIVE TWEAKS ────────────────────────────────────────────────────── */
+.filter-active-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(245,166,35,0.04);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.filter-label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--text3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.active-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: rgba(245,166,35,0.15);
+  border: 1px solid rgba(245,166,35,0.3);
+  border-radius: 2px;
+  font-family: var(--cond);
+  font-size: 0.72rem;
+  color: var(--amber2);
+}
+.active-tag button {
+  background: none;
+  border: none;
+  color: var(--amber);
+  font-size: 0.8rem;
+  padding: 0;
+  line-height: 1;
+}
+.active-tag button:hover { color: #fff; }
+</style>
+</head>
+<body class="dark">
+<div id="app">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="topbar-logo">
+      <div class="logo-mark"></div>
+      <div>
+        <div class="logo-name">Yantra<span>Live</span></div>
+        <div class="logo-sub">Contact Database</div>
+      </div>
+    </div>
+    <div class="topbar-stats" id="stats-bar">
+      <div class="stat-pill">
+        <div class="val" id="stat-companies">{{ stats.companies }}</div>
+        <div class="lbl">Companies</div>
+      </div>
+      <div class="stat-pill">
+        <div class="val" id="stat-people">{{ stats.people }}</div>
+        <div class="lbl">Contacts</div>
+      </div>
+      <div class="stat-pill">
+        <div class="val" id="stat-enriched">{{ stats.enriched }}</div>
+        <div class="lbl">Enriched</div>
+      </div>
+      <div class="stat-pill">
+        <div class="val" id="stat-cats">{{ stats.categories }}</div>
+        <div class="lbl">Categories</div>
+      </div>
+      <div class="stat-pill">
+        <div class="val" id="stat-flagged" style="color:var(--red)">{{ stats.flagged }}</div>
+        <div class="lbl">Flagged</div>
+      </div>
+      <button onclick="toggleTheme()" id="theme-btn" style="background: none; border: 1px solid var(--border2); color: var(--text2); padding: 4px 12px; border-radius: 2px; font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.1em;">☀ LIGHT</button>
+    </div>
+  </header>
+
+  <!-- TAB BAR -->
+  <nav class="tabbar">
+    <button class="tab-btn active" data-tab="db"><span class="tab-icon">◈</span> Database</button>
+    <button class="tab-btn" data-tab="ocr"><span class="tab-icon">▣</span> OCR Pipeline</button>
+    <button class="tab-btn" data-tab="enrich"><span class="tab-icon">⬡</span> Enrichment</button>
+    <button class="tab-btn" data-tab="normalize"><span class="tab-icon">◉</span> Normalize</button>
+    <button class="tab-btn" data-tab="notifications" id="tab-notifications"><span class="tab-icon">⚑</span> Notifications <span id="flag-badge" style="display:none;background:var(--red);color:#fff;font-family:var(--mono);font-size:0.55rem;padding:1px 5px;border-radius:8px;margin-left:2px;">0</span></button>
+    <button class="tab-btn" data-tab="tasks"><span class="tab-icon">✓</span> Tasks</button>
+  </nav>
+
+  <!-- PANELS -->
+  <div class="panels">
+
+    <!-- ── DATABASE ──────────────────────────────────────────────────────── -->
+    <div class="panel active" id="panel-db">
+      <aside class="sidebar">
+        <button class="filter-section-head" onclick="toggleSection('cat')" id="head-cat">
+          <span class="sidebar-title">Filter by Category</span>
+          <span class="section-arrow" id="arrow-cat">▶</span>
+        </button>
+        <div class="sidebar-body filter-section-body" id="cat-list" style="display:none">
+          {% for cat in categories %}
+          <label class="cat-item" data-cat="{{ cat }}">
+            <input type="checkbox" value="{{ cat }}" onchange="onCatChange()">
+            <span class="cat-label">{{ cat }}</span>
+            <span class="cat-count" id="count-{{ loop.index }}"></span>
+          </label>
+          {% endfor %}
+        </div>
+        <button class="filter-section-head" onclick="toggleSection('industry')" id="head-industry">
+          <span class="sidebar-title">Filter by Industry</span>
+          <span class="section-arrow" id="arrow-industry">▶</span>
+        </button>
+        <div class="sidebar-body filter-section-body" id="industry-list" style="display:none; max-height:160px;">
+          {% for ind in industries %}
+          <label class="cat-item" data-industry="{{ ind }}">
+            <input type="checkbox" value="{{ ind }}" onchange="onCatChange()">
+            <span class="cat-label">{{ ind }}</span>
+          </label>
+          {% endfor %}
+        </div>
+
+        <button class="filter-section-head" onclick="toggleSection('type')" id="head-type">
+          <span class="sidebar-title">Filter by Type</span>
+          <span class="section-arrow" id="arrow-type">▶</span>
+        </button>
+        <div class="sidebar-body filter-section-body" id="type-list" style="display:none; max-height:140px;">
+          {% for t in types %}
+          <label class="cat-item" data-type="{{ t }}">
+            <input type="checkbox" value="{{ t }}" onchange="onCatChange()">
+            <span class="cat-label">{{ t }}</span>
+          </label>
+          {% endfor %}
+        </div>
+
+        <div class="sidebar-footer">
+          <button class="btn-clear" onclick="clearFilters()">Clear All Filters</button>
+        </div>
+      </aside>
+
+      <div class="db-main">
+        <div class="toolbar">
+          <div class="search-wrap">
+            <input class="search-input" type="text" id="search-input"
+              placeholder="Search company name, domain, person…"
+              oninput="debounceSearch()">
+          </div>
+          <select class="sort-select" id="sort-select" onchange="loadCompanies()">
+            <option value="name">Sort: Name</option>
+            <option value="primary_industry">Sort: Industry</option>
+            <option value="domain">Sort: Domain</option>
+            <option value="id">Sort: DB Order</option>
+          </select>
+          <select class="sort-select" id="dir-select" onchange="loadCompanies()">
+            <option value="asc">A → Z</option>
+            <option value="desc">Z → A</option>
+          </select>
+          <span class="result-count" id="result-count">— companies</span>
+        </div>
+
+        <!-- active filter chips -->
+        <div class="filter-active-bar" id="filter-bar" style="display:none">
+          <span class="filter-label">Filters:</span>
+          <div id="active-chips"></div>
+        </div>
+
+        <div class="table-wrap">
+          <table id="companies-table">
+            <thead>
+              <tr>
+                <th style="width:26px"></th>
+                <th>Company</th>
+                <th>Domain</th>
+                <th>Industry</th>
+                <th>Type</th>
+                <th>Categories</th>
+                <th>Markets</th>
+                <th style="width:180px">Notes</th>
+              </tr>
+            </thead>
+            <tbody id="companies-body">
+              <tr class="loading-row">
+                <td colspan="8"><span class="spinner"></span>Loading companies…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── OCR PIPELINE ──────────────────────────────────────────────────── -->
+    <div class="panel" id="panel-ocr">
+      <div class="pipeline-header">
+        <div>
+          <div class="pipeline-title">OCR Pipeline</div>
+          <div class="pipeline-desc">
+            Scan a folder of business card images. Images are grouped by sub-folder (one folder = one company).
+            GPT-4o extracts structured contact data and saves it to the database.
+          </div>
+        </div>
+        <div class="mode-toggle">
+          <button class="mode-btn active" id="ocr-mode-bulk" onclick="setOcrMode('bulk')">Bulk</button>
+          <button class="mode-btn" id="ocr-mode-single" onclick="setOcrMode('single')">Single</button>
+        </div>
+      </div>
+
+      <!-- bulk mode -->
+      <div id="ocr-bulk-form" class="pipeline-form">
+        <div class="form-group">
+          <label class="form-label">Image Folder Path</label>
+          <input class="form-input" type="text" id="ocr-folder" placeholder="/path/to/business-cards/">
+        </div>
+        <button class="btn-run" id="btn-ocr" onclick="runPipeline('ocr')">▶ Run OCR</button>
+      </div>
+
+      <!-- single mode -->
+      <div id="ocr-single-form" style="display:none;padding:16px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+          <div style="flex:1;min-width:200px">
+            <label class="form-label">Front of Card</label>
+            <input type="file" accept="image/*" id="ocr-single-front" class="form-input" style="padding:6px">
+          </div>
+          <div style="flex:1;min-width:200px">
+            <label class="form-label">Back of Card <span style="color:var(--text3)">(optional)</span></label>
+            <input type="file" accept="image/*" id="ocr-single-back" class="form-input" style="padding:6px">
+          </div>
+        </div>
+        <button class="btn-run" onclick="runSingleOcr()">▶ Scan Card</button>
+        <span id="ocr-single-status" style="font-family:var(--mono);font-size:0.7rem;color:var(--text3);margin-left:12px"></span>
+      </div>
+
+      <!-- single review form -->
+      <div id="ocr-single-review" style="display:none;padding:16px;border-bottom:1px solid var(--border);overflow-y:auto;max-height:340px">
+        <div id="ocr-single-review-body"></div>
+        <div style="display:flex;gap:10px;margin-top:12px">
+          <button class="btn-run" onclick="saveSingleOcr()">Save to Database</button>
+          <button class="btn-run" style="background:var(--bg3);color:var(--text2)" onclick="resetSingleOcr()">Rescan</button>
+        </div>
+        <div id="ocr-single-save-status" style="font-family:var(--mono);font-size:0.7rem;color:var(--text3);margin-top:8px"></div>
+      </div>
+
+      <div class="terminal-wrap" id="term-ocr">
+        <div class="terminal-titlebar">
+          <div class="term-dot r"></div><div class="term-dot y"></div><div class="term-dot g"></div>
+          <span class="terminal-label">script.py — stdout</span>
+          <span class="terminal-status">
+            <span class="status-dot" id="sdot-ocr"></span>
+            <span id="slabel-ocr" style="color:var(--text3)">IDLE</span>
+          </span>
+        </div>
+        <div class="terminal-body" id="tbody-ocr">
+          <span class="t-line t-dim">$ # OCR pipeline ready. Enter a folder path and press Run.</span>
+          <span class="t-prompt"><span class="term-cursor"></span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ENRICHMENT PIPELINE ───────────────────────────────────────────── -->
+    <div class="panel" id="panel-enrich">
+      <div class="pipeline-header">
+        <div>
+          <div class="pipeline-title">Enrichment Pipeline</div>
+          <div class="pipeline-desc-narrow">
+            Scrape each company's website via Firecrawl and enrich with GPT-4o.
+            Populates industry, sub-industry, company type, products, and markets.
+          </div>
+        </div>
+        <div class="mode-toggle">
+          <button class="mode-btn active" id="enrich-mode-bulk" onclick="setEnrichMode('bulk')">Bulk</button>
+          <button class="mode-btn" id="enrich-mode-single" onclick="setEnrichMode('single')">Single</button>
+        </div>
+      </div>
+
+      <!-- bulk mode -->
+      <div id="enrich-bulk-form" class="pipeline-form">
+        <button class="btn-run" id="btn-enrich" onclick="runPipeline('enrich')" style="margin-left:auto">▶ Run Enrichment</button>
+      </div>
+
+      <!-- single mode -->
+      <div id="enrich-single-form" style="display:none" class="pipeline-form">
+        <div class="form-group" style="flex:1">
+          <label class="form-label">Company</label>
+          <select class="form-input" id="enrich-single-company">
+            <option value="">Select company...</option>
+          </select>
+        </div>
+        <button class="btn-run" id="btn-enrich-single" onclick="runSingleEnrich()">▶ Enrich</button>
+      </div>
+      <div class="terminal-wrap" id="term-enrich">
+        <div class="terminal-titlebar">
+          <div class="term-dot r"></div><div class="term-dot y"></div><div class="term-dot g"></div>
+          <span class="terminal-label">enrich2.py — stdout</span>
+          <span class="terminal-status">
+            <span class="status-dot" id="sdot-enrich"></span>
+            <span id="slabel-enrich" style="color:var(--text3)">IDLE</span>
+          </span>
+        </div>
+        <div class="terminal-body" id="tbody-enrich">
+          <span class="t-line t-dim">$ # Enrichment pipeline ready.</span>
+          <span class="t-prompt"><span class="term-cursor"></span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── NORMALIZE ─────────────────────────────────────────────────────── -->
+    <div class="panel" id="panel-normalize">
+      <div class="pipeline-header">
+        <div>
+          <div class="pipeline-title">Normalize Categories</div>
+          <div class="pipeline-desc">
+            Classify each enriched company's raw GPT products into standardized
+            categories (Earthmoving, Crushing & Screening, etc.)
+            and populate the company_categories table.
+          </div>
+        </div>
+      </div>
+      <div class="pipeline-form">
+        <div class="form-group" style="flex:0">
+          <label class="form-label">Mode</label>
+          <select class="form-input" id="normalize-mode" style="width:160px">
+            <option value="run">Run (write to DB)</option>
+            <option value="dry">Dry Run (preview only)</option>
+          </select>
+        </div>
+        <button class="btn-run" id="btn-normalize" onclick="runPipeline('normalize')" style="margin-left:auto">▶ Normalize</button>
+      </div>
+      <div class="terminal-wrap" id="term-normalize">
+        <div class="terminal-titlebar">
+          <div class="term-dot r"></div><div class="term-dot y"></div><div class="term-dot g"></div>
+          <span class="terminal-label">normalizer.py — stdout</span>
+          <span class="terminal-status">
+            <span class="status-dot" id="sdot-normalize"></span>
+            <span id="slabel-normalize" style="color:var(--text3)">IDLE</span>
+          </span>
+        </div>
+        <div class="terminal-body" id="tbody-normalize">
+          <span class="t-line t-dim">$ # Normalizer ready. Run to classify enriched products into categories.</span>
+          <span class="t-prompt"><span class="term-cursor"></span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── NOTIFICATIONS ───────────────────────────────────────────────── -->
+    <div class="panel" id="panel-notifications">
+      <div class="notif-header">
+        <div>
+          <div class="pipeline-title">Flagged Companies</div>
+          <div class="pipeline-desc-narrow">Companies that need attention — no category match, enrichment failures, or missing domains.</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-shrink:0">
+          <button class="btn-run" id="btn-bulk-gpt" onclick="runBulkGpt()" style="background:var(--bg3);color:var(--amber);border:1px solid var(--amber-dim);">⚡ Run GPT on All</button>
+          <button class="btn-run" onclick="loadFlagged()">↺ Refresh</button>
+        </div>
+      </div>
+
+      <div class="notif-filters">
+        <span class="notif-filter-label">Show:</span>
+        <button class="notif-filter-btn active" data-reason="all" onclick="setReasonFilter('all')">All</button>
+        <button class="notif-filter-btn" data-reason="no_category_match" onclick="setReasonFilter('no_category_match')">No Category</button>
+        <button class="notif-filter-btn" data-reason="scrape_failed" onclick="setReasonFilter('scrape_failed')">Scrape Failed</button>
+        <button class="notif-filter-btn" data-reason="enrichment_failed" onclick="setReasonFilter('enrichment_failed')">Enrich Failed</button>
+        <button class="notif-filter-btn" data-reason="no_domain" onclick="setReasonFilter('no_domain')">No Domain</button>
+        <span class="notif-count" id="notif-count"></span>
+      </div>
+
+      <div class="notif-list" id="notif-list">
+        <div style="text-align:center;padding:60px;color:var(--text3);font-family:var(--mono);font-size:.75rem">
+          <span class="spinner"></span> Loading…
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-tasks">
+      <div style="display:flex;flex-direction:column;height:100%;overflow:hidden">
+
+        <!-- transcript upload section -->
+        <div style="padding:20px;border-bottom:1px solid var(--border);flex-shrink:0">
+          <div class="pipeline-title" style="font-size:1.2rem;margin-bottom:8px">Upload Transcript</div>
+          <textarea id="transcript-input" style="width:100%;height:120px;background:var(--bg3);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:0.75rem;padding:10px;border-radius:2px;resize:vertical" placeholder="Paste meeting transcript, notes, or any text with action items here…"></textarea>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap">
+            <button class="btn-run" onclick="processTranscript()">Extract Tasks</button>
+            <div id="transcript-status" style="font-family:var(--mono);font-size:0.7rem;color:var(--text3)"></div>
+          </div>
+
+          <!-- GPT results preview -->
+          <div id="transcript-preview" style="display:none;margin-top:16px;max-height:300px;overflow-y:auto">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+              <span style="font-family:var(--mono);font-size:0.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em">Assign to company:</span>
+              <select id="company-select" class="sort-select" style="flex:1;max-width:300px"></select>
+            </div>
+            <div id="extracted-tasks"></div>
+            <button class="btn-run" style="margin-top:12px" onclick="saveTasks()">Save Tasks</button>
+          </div>
+        </div>
+
+        <!-- task list -->
+        <div style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+          <div class="toolbar" style="flex-shrink:0">
+            <select class="sort-select" id="task-company-filter" onchange="loadTasks()">
+              <option value="">All Companies</option>
+            </select>
+            <select class="sort-select" id="task-status-filter" onchange="loadTasks()">
+              <option value="">All Statuses</option>
+              <option value="To Do">To Do</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Done">Done</option>
+            </select>
+            <span class="result-count" id="task-count"></span>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:12px 16px" id="task-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GPT Confirm Modal -->
+    <div class="modal-overlay" id="gpt-modal" style="display:none" onclick="closeModal()">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-title">GPT Category Suggestion</div>
+        <div class="modal-sub" id="modal-company-name"></div>
+        <div class="modal-section-label">Suggested Categories</div>
+        <div id="modal-suggestions" class="modal-tags"></div>
+        <div class="modal-section-label" style="margin-top:12px">Products used for classification</div>
+        <div id="modal-products" class="modal-products"></div>
+        <div class="modal-actions">
+          <button class="modal-btn-cancel" onclick="closeModal()">Cancel</button>
+          <button class="modal-btn-confirm" id="modal-confirm-btn" onclick="confirmGpt()">Save & Resolve</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /panels -->
+</div><!-- /app -->
+
+<script>
+// ── STATE ─────────────────────────────────────────────────────────────────
+let allCompanies = [];
+let expandedRows = new Set();
+let searchTimer = null;
+let currentSort = 'name';
+let currentDir = 'asc';
+
+// ── TABS ──────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'notifications') loadFlagged();
+  });
+});
+
+// ── CATEGORY FILTER ───────────────────────────────────────────────────────
+function getSelectedCats() {
+  return [...document.querySelectorAll('#cat-list input:checked')].map(i => i.value);
+}
+
+function getSelectedIndustries() {
+  return [...document.querySelectorAll('#industry-list input:checked')].map(i => i.value);
+}
+
+function getSelectedTypes() {
+  return [...document.querySelectorAll('#type-list input:checked')].map(i => i.value);
+}
+
+function onCatChange() {
+  updateFilterBar();
+  loadCompanies();
+}
+
+function clearFilters() {
+  ['#cat-list input', '#industry-list input', '#type-list input'].forEach(sel => {
+    document.querySelectorAll(sel).forEach(i => {
+      i.checked = false;
+      i.closest('.cat-item').classList.remove('checked');
+    });
+  });
+  updateFilterBar();
+  loadCompanies();
+}
+
+function updateFilterBar() {
+  const cats = getSelectedCats();
+  const bar = document.getElementById('filter-bar');
+  const chips = document.getElementById('active-chips');
+
+  document.querySelectorAll('#cat-list input').forEach(i => {
+    i.closest('.cat-item').classList.toggle('checked', i.checked);
+  });
+
+  if (cats.length === 0) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  chips.innerHTML = cats.map(c =>
+    `<span class="active-tag">${c}
+      <button onclick="removeCat('${c.replace(/'/g,"\\'")}')">×</button>
+    </span>`
+  ).join('');
+}
+
+function removeFilter(value, type) {
+  const listId = type === 'cat' ? 'cat-list' : type === 'industry' ? 'industry-list' : 'type-list';
+  const input = document.querySelector(`#${listId} input[value="${CSS.escape(value)}"]`);
+  if (input) { input.checked = false; }
+  onCatChange();
+}
+
+// ── SEARCH ────────────────────────────────────────────────────────────────
+function debounceSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadCompanies, 350);
+}
+
+// ── LOAD COMPANIES ────────────────────────────────────────────────────────
+async function loadCompanies() {
+  const cats = getSelectedCats();
+  const q = document.getElementById('search-input').value.trim();
+  const sort = document.getElementById('sort-select').value;
+  const dir = document.getElementById('dir-select').value;
+
+  const industries = getSelectedIndustries();
+  const types = getSelectedTypes();
+  const params = new URLSearchParams();
+  cats.forEach(c => params.append('cat', c));
+  industries.forEach(i => params.append('industry', i));
+  types.forEach(t => params.append('type', t));
+  if (q) params.set('q', q);
+  params.set('sort', sort);
+  params.set('dir', dir);
+
+  try {
+    const res = await fetch('/api/companies?' + params);
+    allCompanies = await res.json();
+    renderTable(allCompanies);
+  } catch(e) {
+    document.getElementById('companies-body').innerHTML =
+      `<tr><td colspan="8" style="color:var(--red);text-align:center;padding:30px;font-family:var(--mono);font-size:.75rem">Error loading data: ${e.message}</td></tr>`;
+  }
+}
+
+// ── RENDER TABLE ──────────────────────────────────────────────────────────
+function renderTable(companies) {
+  const tbody = document.getElementById('companies-body');
+  document.getElementById('result-count').textContent = `${companies.length} companies`;
+
+  if (companies.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8">
+      <div class="empty-state">
+        <div class="empty-icon">◎</div>
+        <p>No companies match your current filters.</p>
+      </div>
+    </td></tr>`;
+    return;
+  }
+
+  let html = '';
+  companies.forEach((c, i) => {
+    const isOpen = expandedRows.has(c.id);
+    const cats = (c.categories || []).map(cat =>
+      `<span class="tag tag-cat">${cat}</span>`).join('');
+    const types = (c.company_type || []).map(t =>
+      `<span class="tag tag-type">${t}</span>`).join('');
+    const markets = (c.markets || []).slice(0, 3).map(m =>
+      `<span class="tag tag-market">${m}</span>`).join('');
+
+    const domainHtml = c.domain
+      ? `<a href="https://${c.domain}" target="_blank" class="td-domain">${c.domain}</a>`
+      : `<span style="color:var(--text3);font-family:var(--mono);font-size:.7rem">—</span>`;
+
+    html += `
+    <tr class="company-row ${isOpen ? 'expanded' : ''}" data-id="${c.id}" onclick="toggleRow(${c.id})">
+      <td><span class="expand-arrow ${isOpen ? '' : ''}">▶</span></td>
+      <td><div class="td-name">${escHtml(c.name || '—')}</div></td>
+      <td>${domainHtml}</td>
+      <td style="color:var(--text2);font-size:.8rem">${escHtml(c.primary_industry || '—')}</td>
+      <td>${types || '<span style="color:var(--text3)">—</span>'}</td>
+      <td>${cats || '<span style="color:var(--text3)">—</span>'}</td>
+      <td>${markets || '<span style="color:var(--text3)">—</span>'}</td>
+      <td onclick="event.stopPropagation()">
+        <textarea
+          class="notes-cell"
+          data-id="${c.id}"
+          placeholder="Add notes…"
+          onblur="saveNotes(${c.id}, this.value)"
+        >${escHtml(c.notes || '')}</textarea>
+      </td>
+    </tr>
+    <tr class="expand-row ${isOpen ? 'open' : ''}" id="expand-${c.id}">
+      <td class="expand-cell" colspan="8">
+        <div class="expand-inner" id="expand-inner-${c.id}">
+          <div style="display:flex;align-items:center;padding:20px;color:var(--text3);font-family:var(--mono);font-size:.7rem">
+            <span class="spinner"></span> Loading…
+          </div>
+        </div>
+      </td>
+    </tr>`;
+  });
+
+  tbody.innerHTML = html;
+  // re-load open rows
+  expandedRows.forEach(id => loadExpandRow(id));
+}
+
+async function toggleRow(id) {
+  const row = document.querySelector(`.company-row[data-id="${id}"]`);
+  const expandRow = document.getElementById(`expand-${id}`);
+  if (!row) return;
+
+  if (expandedRows.has(id)) {
+    expandedRows.delete(id);
+    row.classList.remove('expanded');
+    expandRow.classList.remove('open');
+    row.querySelector('.expand-arrow').style.transform = '';
+    row.querySelector('.expand-arrow').style.color = '';
+  } else {
+    expandedRows.add(id);
+    row.classList.add('expanded');
+    expandRow.classList.add('open');
+    row.querySelector('.expand-arrow').style.transform = 'rotate(90deg)';
+    row.querySelector('.expand-arrow').style.color = 'var(--amber)';
+    loadExpandRow(id);
+  }
+}
+
+async function loadExpandRow(id) {
+  const inner = document.getElementById(`expand-inner-${id}`);
+  if (!inner) return;
+  const company = allCompanies.find(c => c.id === id);
+  if (!company) return;
+
+  let people = [];
+  try {
+    const res = await fetch(`/api/company/${id}/people`);
+    people = await res.json();
+  } catch(e) {}
+
+  const products = (company.products || []).map(p =>
+    `<span class="tag-product">${escHtml(p)}</span>`).join('');
+
+  const peopleHtml = people.length ? people.map(p => `
+    <div class="person-card">
+      <div class="person-name">${escHtml(p.name || '—')}</div>
+      <div class="person-role">${escHtml(p.role || '')}</div>
+      ${(p.emails || []).map(e => `<div class="person-contact">✉ ${escHtml(e)}</div>`).join('')}
+      ${(p.phones || []).map(ph => `<div class="person-contact">✆ ${escHtml(ph)}</div>`).join('')}
+    </div>
+  `).join('') : '<span style="color:var(--text3);font-size:.75rem;font-family:var(--mono)">No contacts found</span>';
+
+  const markets = (company.markets || []).map(m =>
+    `<span class="tag tag-market">${escHtml(m)}</span>`).join('') || '—';
+
+  inner.innerHTML = `
+    <div class="expand-section">
+      <div class="expand-label">Contacts</div>
+      <div class="expand-value">${peopleHtml}</div>
+    </div>
+    <div class="expand-section">
+      <div class="expand-label">Products & Services</div>
+      <div class="expand-value">
+        <div class="product-list" style="margin-bottom:12px">${products || '—'}</div>
+        <div class="expand-label" style="margin-top:12px">Markets</div>
+        <div>${markets}</div>
+      </div>
+    </div>
+    <div class="expand-section">
+      <div class="expand-label">Industry Detail</div>
+      <div class="expand-value" style="margin-bottom:10px">
+        <span style="color:var(--text3);font-size:.72rem">Primary:</span>
+        <span style="margin-left:6px">${escHtml(company.primary_industry || '—')}</span><br>
+        <span style="color:var(--text3);font-size:.72rem;margin-top:4px;display:block">Segment:</span>
+        <span style="margin-left:6px">${escHtml(company.sub_industry || '—')}</span>
+      </div>
+      ${(company.websites||[]).length ? `
+      <div class="expand-label" style="margin-top:8px">Websites</div>
+      <div>${(company.websites||[]).filter(w=>w).map(w =>
+        `<a href="${w.startsWith('http')?w:'https://'+w}" target="_blank" style="display:block;font-family:var(--mono);font-size:.7rem;color:var(--blue);word-break:break-all">${escHtml(w)}</a>`
+      ).join('')}</div>` : ''}
+      ${(company.addresses||[]).length ? `
+      <div class="expand-label" style="margin-top:8px">Addresses</div>
+      <div>${(company.addresses||[]).map(a =>
+        `<div style="font-size:.78rem;color:var(--text2);margin-bottom:3px">${escHtml(a)}</div>`
+      ).join('')}</div>` : ''}
+      ${(company.phones||[]).length ? `
+      <div class="expand-label" style="margin-top:8px">Company Phones</div>
+      <div style="font-family:var(--mono);font-size:.7rem;color:var(--text2)">${(company.phones||[]).join(' · ')}</div>` : ''}
+    </div>
+  `;
+}
+
+// ── PIPELINE ──────────────────────────────────────────────────────────────
+const pipelineState = {};
+
+async function runPipeline(type) {
+  if (pipelineState[type] === 'running') return;
+
+  const btn = document.getElementById(`btn-${type}`);
+  const tbody = document.getElementById(`tbody-${type}`);
+  const sdot = document.getElementById(`sdot-${type}`);
+  const slabel = document.getElementById(`slabel-${type}`);
+
+  let body = { pipeline: type };
+  if (type === 'ocr') {
+    const folder = document.getElementById('ocr-folder').value.trim();
+    if (!folder) { alert('Please enter a folder path.'); return; }
+    body.folder = folder;
+  }
+  if (type === 'normalize') {
+    const mode = document.getElementById('normalize-mode').value;
+    body.dry_run = mode === 'dry';
+  }
+
+  // clear terminal
+  tbody.innerHTML = `<span class="t-line t-dim">$ python ${scriptName(type)} ${type==='ocr'?body.folder||'':''}</span>\n`;
+  setStatus(type, 'running', 'RUNNING');
+  btn.disabled = true;
+  pipelineState[type] = 'running';
+  document.getElementById(`term-${type}`).classList.add('running');
+
+  try {
+    const res = await fetch('/api/pipeline/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const { job_id, error } = await res.json();
+    if (error) throw new Error(error);
+
+    const es = new EventSource(`/api/pipeline/output/${job_id}`);
+    es.onmessage = (e) => {
+      if (e.data === '__DONE__') {
+        es.close();
+        setStatus(type, 'done', 'DONE');
+        btn.disabled = false;
+        pipelineState[type] = 'idle';
+        document.getElementById(`term-${type}`).classList.remove('running');
+        appendLine(tbody, '$ Process exited.', 't-done');
+        // refresh stats after pipeline run
+        refreshStats();
+        return;
+      }
+      const cls = e.data.startsWith('ERROR') ? 't-err'
+                : e.data.includes('WARNING') ? 't-warn' : '';
+      appendLine(tbody, e.data, cls);
+    };
+    es.onerror = () => {
+      es.close();
+      setStatus(type, 'error', 'ERROR');
+      btn.disabled = false;
+      pipelineState[type] = 'idle';
+      document.getElementById(`term-${type}`).classList.remove('running');
+      appendLine(tbody, 'Connection to server lost.', 't-err');
+    };
+  } catch(e) {
+    setStatus(type, 'error', 'ERROR');
+    btn.disabled = false;
+    pipelineState[type] = 'idle';
+    appendLine(tbody, `ERROR: ${e.message}`, 't-err');
+  }
+}
+
+function appendLine(tbody, text, cls='') {
+  const span = document.createElement('span');
+  span.className = `t-line ${cls}`;
+  span.textContent = text;
+  tbody.appendChild(span);
+  tbody.scrollTop = tbody.scrollHeight;
+}
+
+function setStatus(type, state, label) {
+  const dot = document.getElementById(`sdot-${type}`);
+  const lbl = document.getElementById(`slabel-${type}`);
+  dot.className = `status-dot ${state}`;
+  lbl.textContent = label;
+  lbl.style.color = state === 'running' ? 'var(--amber)' : state === 'done' ? 'var(--green)' : 'var(--red)';
+}
+
+function scriptName(type) {
+  return { ocr: 'script.py', enrich: 'enrich2.py', normalize: 'normalizer.py' }[type] || type;
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function refreshStats() {
+  try {
+    const res = await fetch('/api/stats');
+    const s = await res.json();
+    document.getElementById('stat-companies').textContent = s.companies;
+    document.getElementById('stat-people').textContent = s.people;
+    document.getElementById('stat-enriched').textContent = s.enriched;
+    document.getElementById('stat-cats').textContent = s.categories;
+    document.getElementById('stat-flagged').textContent = s.flagged || 0;
+    const badge = document.getElementById('flag-badge');
+    if (s.flagged > 0) {
+      badge.textContent = s.flagged;
+      badge.style.display = 'inline';
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch(e) {}
+}
+
+function toggleTheme() {
+  const isDark = document.body.classList.contains('dark');
+  document.body.classList.toggle('dark', !isDark);
+  document.body.classList.toggle('light', isDark);
+  document.getElementById('theme-btn').textContent = isDark ? '☀ LIGHT' : '🌙 DARK';
+  localStorage.setItem('theme', isDark ? 'light' : 'dark');
+}
+
+// restore saved preference on load
+const saved = localStorage.getItem('theme') || 'dark';
+document.body.className = saved;
+document.getElementById('theme-btn').textContent = saved === 'dark' ? '☀ LIGHT' : '🌙 DARK';
+
+// ── FILTER SECTIONS ──────────────────────────────────────────────────────
+function toggleSection(name) {
+  const body = document.getElementById(name === 'cat' ? 'cat-list' : name === 'industry' ? 'industry-list' : 'type-list');
+  const arrow = document.getElementById(`arrow-${name}`);
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  arrow.classList.toggle('open', !isOpen);
+}
+
+// ── NOTES ────────────────────────────────────────────────────────────────
+let notesSaveTimers = {};
+
+function saveNotes(id, value) {
+  clearTimeout(notesSaveTimers[id]);
+  notesSaveTimers[id] = setTimeout(async () => {
+    const cell = document.querySelector(`.notes-cell[data-id="${id}"]`);
+    if (cell) cell.classList.add('notes-saving');
+    try {
+      await fetch(`/api/company/${id}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: value }),
+      });
+      const company = allCompanies.find(c => c.id === id);
+      if (company) company.notes = value;
+      if (cell) {
+        cell.classList.remove('notes-saving');
+        cell.classList.add('notes-saved');
+        setTimeout(() => cell.classList.remove('notes-saved'), 1500);
+      }
+    } catch(e) {
+      if (cell) cell.classList.remove('notes-saving');
+    }
+  }, 600);
+}
+
+// ── NOTIFICATIONS ────────────────────────────────────────────────────────
+let allFlagged = [];
+let reasonFilter = 'all';
+let canonicalCategories = [];
+let pendingGpt = null; // { flag_id, company_name, categories, products }
+
+async function loadFlagged() {
+  const list = document.getElementById('notif-list');
+  list.innerHTML = '<div style="text-align:center;padding:60px;color:var(--text3);font-family:var(--mono);font-size:.75rem"><span class="spinner"></span> Loading…</div>';
+
+  try {
+    const [flagRes, catRes] = await Promise.all([
+      fetch('/api/flagged'),
+      fetch('/api/flagged/categories'),
+    ]);
+    allFlagged = await flagRes.json();
+    canonicalCategories = await catRes.json();
+    renderFlagged();
+    refreshStats();
+  } catch(e) {
+    list.innerHTML = `<div style="color:var(--red);font-family:var(--mono);font-size:.75rem;padding:20px">Error loading flagged companies: ${e.message}</div>`;
+  }
+}
+
+function setReasonFilter(reason) {
+  reasonFilter = reason;
+  document.querySelectorAll('.notif-filter-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.reason === reason);
+  });
+  renderFlagged();
+}
+
+function renderFlagged() {
+  const list = document.getElementById('notif-list');
+  const filtered = reasonFilter === 'all'
+    ? allFlagged
+    : allFlagged.filter(f => f.reason === reasonFilter);
+
+  document.getElementById('notif-count').textContent = `${filtered.length} item${filtered.length !== 1 ? 's' : ''}`;
+  
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">✓</div><p>${reasonFilter === 'all' ? 'No flagged companies.' : 'No items with this filter.'}</p></div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(f => {
+    const reasonClass = `reason-${f.reason}`;
+    const reasonLabel = {
+      no_category_match: 'No Category',
+      scrape_failed:     'Scrape Failed',
+      enrichment_failed: 'Enrich Failed',
+      no_domain:         'No Domain',
+    }[f.reason] || f.reason;
+
+    const date = f.created_at ? f.created_at.split('T')[0] : '';
+    const products = (f.products || []).slice(0, 6).map(p =>
+      `<span class="tag-product">${escHtml(p)}</span>`
+    ).join('');
+    const moreProducts = f.products && f.products.length > 6
+      ? `<span style="font-family:var(--mono);font-size:.6rem;color:var(--text3)">+${f.products.length - 6} more</span>` : '';
+
+    const canGpt = f.reason === 'no_category_match' && f.products && f.products.length > 0;
+    const canAssign = f.reason === 'no_category_match';
+    const canAddDomain = f.reason === 'no_domain';
+
+    return `
+    <div class="notif-card" id="notif-card-${f.flag_id}">
+      <div class="notif-card-left">
+        <div class="notif-company">${escHtml(f.company_name)}</div>
+        <div class="notif-meta">
+          <span class="notif-reason ${reasonClass}">${reasonLabel}</span>
+          ${f.domain ? `<span class="notif-domain">${escHtml(f.domain)}</span>` : ''}
+          <span class="notif-date">${date}</span>
+        </div>
+        ${products ? `<div class="notif-products">${products}${moreProducts}</div>` : ''}
+      </div>
+      <div class="notif-actions">
+        ${canGpt ? `<button class="notif-btn gpt" onclick="runSingleGpt(${f.flag_id}, '${escHtml(f.company_name).replace(/'/g,"\'")}')">⚡ Run GPT</button>` : ''}
+        ${canAssign ? `
+        <div class="notif-assign-wrap">
+          <div class="notif-multiselect" id="ms-${f.flag_id}">
+            <button class="notif-multiselect-trigger" onclick="toggleMultiselect(${f.flag_id})">Assign category…</button>
+            <div class="notif-multiselect-dropdown" id="msd-${f.flag_id}">
+              ${canonicalCategories.map(c => `
+              <label class="notif-multiselect-option" id="mso-${f.flag_id}-${c.replace(/[^a-z0-9]/gi,'_')}">
+                <input type="checkbox" value="${escHtml(c)}" onchange="updateMultiselectLabel(${f.flag_id})">
+                ${escHtml(c)}
+              </label>`).join('')}
+            </div>
+          </div>
+          <button class="notif-btn-save" onclick="saveAssign(${f.flag_id})" disabled id="save-assign-${f.flag_id}">Save</button>
+        </div>` : ''}
+        ${canAddDomain ? `
+            <div style="display:flex;gap:6px;align-items:center">
+              <input
+                id="domain-input-${f.flag_id}"
+                placeholder="Enter domain…"
+                style="background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.68rem;padding:5px 8px;border-radius:2px;outline:none;width:160px"
+              >
+              <button class="notif-btn-save" onclick="saveDomain(${f.flag_id}, ${f.company_id})">Save</button>
+            </div>` : ''}
+        <button class="notif-btn dismiss" onclick="dismissFlag(${f.flag_id})">✕ Dismiss</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleMultiselect(flagId) {
+  // close all others first
+  document.querySelectorAll('.notif-multiselect-dropdown.open').forEach(d => {
+    if (d.id !== `msd-${flagId}`) d.classList.remove('open');
+  });
+  document.getElementById(`msd-${flagId}`).classList.toggle('open');
+}
+
+// close dropdowns when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.notif-multiselect')) {
+    document.querySelectorAll('.notif-multiselect-dropdown.open').forEach(d => d.classList.remove('open'));
+  }
+});
+
+function updateMultiselectLabel(flagId) {
+  const checked = [...document.querySelectorAll(`#msd-${flagId} input:checked`)].map(i => i.value);
+  const trigger = document.querySelector(`#ms-${flagId} .notif-multiselect-trigger`);
+  const saveBtn = document.getElementById(`save-assign-${flagId}`);
+  trigger.textContent = checked.length === 0 ? 'Assign category…' : checked.length === 1 ? checked[0] : `${checked.length} categories selected`;
+  saveBtn.disabled = checked.length === 0;
+
+  // highlight checked options
+  document.querySelectorAll(`#msd-${flagId} .notif-multiselect-option`).forEach(opt => {
+    opt.classList.toggle('checked', opt.querySelector('input').checked);
+  });
+}
+
+async function saveAssign(flagId) {
+  const checked = [...document.querySelectorAll(`#msd-${flagId} input:checked`)].map(i => i.value);
+  if (!checked.length) return;
+
+  try {
+    const res = await fetch(`/api/flagged/${flagId}/assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ categories: checked }),
+    });
+    if (!res.ok) throw new Error('Failed');
+    removeCardFromList(flagId);
+    refreshStats();
+  } catch(e) {
+    alert('Error saving: ' + e.message);
+  }
+}
+
+async function dismissFlag(flagId) {
+  try {
+    await fetch(`/api/flagged/${flagId}/dismiss`, { method: 'POST' });
+    removeCardFromList(flagId);
+    refreshStats();
+  } catch(e) {
+    alert('Error dismissing: ' + e.message);
+  }
+}
+
+async function saveDomain(flagId, companyId) {
+  const input = document.getElementById(`domain-input-${flagId}`);
+  const domain = input.value.trim();
+  if (!domain) return;
+  try {
+    const res = await fetch(`/api/company/${companyId}/domain`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain }),
+    });
+    if (!res.ok) throw new Error('Failed');
+    removeCardFromList(flagId);
+    refreshStats();
+  } catch(e) {
+    alert('Error saving domain: ' + e.message);
+  }
+}
+
+function removeCardFromList(flagId) {
+  const card = document.getElementById(`notif-card-${flagId}`);
+  if (card) card.remove();
+  allFlagged = allFlagged.filter(f => f.flag_id !== flagId);
+  const filtered = reasonFilter === 'all' ? allFlagged : allFlagged.filter(f => f.reason === reasonFilter);
+  document.getElementById('notif-count').textContent = `${filtered.length} item${filtered.length !== 1 ? 's' : ''}`;
+  if (filtered.length === 0) {
+    document.getElementById('notif-list').innerHTML = `<div class="empty-state"><div class="empty-icon">✓</div><p>All clear.</p></div>`;
+  }
+}
+
+async function runSingleGpt(flagId, companyName) {
+  const btn = document.querySelector(`#notif-card-${flagId} .notif-btn.gpt`);
+  if (btn) { btn.textContent = '⟳ Running…'; btn.disabled = true; }
+
+  try {
+    const res = await fetch(`/api/flagged/${flagId}/gpt`, { method: 'POST' });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    const flag = allFlagged.find(f => f.flag_id === flagId);
+    pendingGpt = { flag_id: flagId, company_name: companyName, categories: data.categories, products: flag ? flag.products : [] };
+    showGptModal();
+  } catch(e) {
+    alert('GPT error: ' + e.message);
+  } finally {
+    if (btn) { btn.textContent = 'Run GPT'; btn.disabled = false; }
+  }
+}
+
+function showGptModal() {
+  if (!pendingGpt) return;
+  document.getElementById('modal-company-name').textContent = pendingGpt.company_name;
+  document.getElementById('modal-suggestions').innerHTML = pendingGpt.categories.length
+    ? pendingGpt.categories.map(c => `<span class="tag tag-cat">${escHtml(c)}</span>`).join('')
+    : '<span style="color:var(--text3);font-family:var(--mono);font-size:.72rem">No categories suggested</span>';
+  document.getElementById('modal-products').textContent = (pendingGpt.products || []).join(', ') || '—';
+  document.getElementById('modal-confirm-btn').disabled = pendingGpt.categories.length === 0;
+  document.getElementById('gpt-modal').style.display = 'flex';
+}
+
+function closeModal() {
+  document.getElementById('gpt-modal').style.display = 'none';
+  pendingGpt = null;
+}
+
+async function confirmGpt() {
+  if (!pendingGpt || !pendingGpt.categories.length) return;
+  try {
+    const res = await fetch(`/api/flagged/${pendingGpt.flag_id}/assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ categories: pendingGpt.categories }),
+    });
+    if (!res.ok) throw new Error('Failed to save');
+    removeCardFromList(pendingGpt.flag_id);
+    refreshStats();
+    closeModal();
+  } catch(e) {
+    alert('Error saving: ' + e.message);
+  }
+}
+
+async function runBulkGpt() {
+  const btn = document.getElementById('btn-bulk-gpt');
+  btn.textContent = '⟳ Running…';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/flagged/gpt-bulk', { method: 'POST' });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    await loadFlagged();
+    alert(`GPT bulk run complete.
+Resolved: ${data.resolved}  |  Skipped: ${data.skipped}  |  Failed: ${data.failed}`);
+  } catch(e) {
+    alert('Bulk GPT error: ' + e.message);
+  } finally {
+    btn.textContent = 'Run GPT on All';
+    btn.disabled = false;
+  }
+}
+
+// ── TASKS ─────────────────────────────────────────────────────────────────
+let extractedTasks = [];
+let transcriptText = '';
+
+async function loadCompanyList() {
+  const res = await fetch('/api/companies/list');
+  const companies = await res.json();
+  ['company-select', 'task-company-filter'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const isFilter = id === 'task-company-filter';
+    if (isFilter) sel.innerHTML = '<option value="">All Companies</option>';
+    else sel.innerHTML = '';
+    companies.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.name;
+      sel.appendChild(opt);
+    });
+  });
+}
+
+async function processTranscript() {
+  const transcript = document.getElementById('transcript-input').value.trim();
+  if (!transcript) return;
+  transcriptText = transcript;
+
+  const status = document.getElementById('transcript-status');
+  status.textContent = '⟳ Extracting tasks…';
+
+  try {
+    const res = await fetch('/api/transcript', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcript })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    extractedTasks = data.tasks || [];
+    status.textContent = `Found ${extractedTasks.length} task(s)`;
+
+    // pre-select suggested company
+    if (data.suggested_company_id) {
+      document.getElementById('company-select').value = data.suggested_company_id;
+    }
+
+    renderExtractedTasks();
+    document.getElementById('transcript-preview').style.display = 'block';
+  } catch(e) {
+    status.textContent = `Error: ${e.message}`;
+  }
+}
+
+function renderExtractedTasks() {
+  const container = document.getElementById('extracted-tasks');
+  container.innerHTML = extractedTasks.map((t, i) => `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:3px;padding:12px;margin-bottom:8px">
+      <button onclick="extractedTasks.splice(${i}, 1); renderExtractedTasks();"
+      style="background:none;border:none;color:var(--text3);font-size:0.8rem;cursor:pointer;padding:0;line-height:1;float:right">X</button>
+      <input
+        style="width:100%;background:transparent;border:none;border-bottom:1px solid var(--border2);color:var(--text);font-family:var(--cond);font-size:1rem;font-weight:700;padding:2px 0;margin-bottom:8px;outline:none"
+        value="${escHtml(t.title || '')}"
+        oninput="extractedTasks[${i}].title = this.value"
+      >
+      <textarea
+        style="width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-family:var(--sans);font-size:0.78rem;padding:6px;border-radius:2px;resize:vertical;outline:none"
+        rows="2"
+        oninput="extractedTasks[${i}].description = this.value"
+      >${escHtml(t.description || '')}</textarea>
+      <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">
+        <input
+          placeholder="Assignee"
+          style="flex:1;min-width:120px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.7rem;padding:5px 8px;border-radius:2px;outline:none"
+          value="${escHtml(t.assignee || '')}"
+          oninput="extractedTasks[${i}].assignee = this.value"
+        >
+        <input
+          type="date"
+          style="background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.7rem;padding:5px 8px;border-radius:2px;outline:none"
+          value="${t.due_date || ''}"
+          oninput="extractedTasks[${i}].due_date = this.value"
+        >
+      </div>
+    </div>
+  `).join('');
+}
+
+async function saveTasks() {
+  const company_id = document.getElementById('company-select').value;
+  if (!company_id) { alert('Please select a company.'); return; }
+
+  const res = await fetch('/api/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ company_id, tasks: extractedTasks, transcript: transcriptText })
+  });
+  const data = await res.json();
+  if (data.ok) {
+    document.getElementById('transcript-preview').style.display = 'none';
+    document.getElementById('transcript-input').value = '';
+    document.getElementById('transcript-status').textContent = `✓ Saved ${data.saved} tasks`;
+    extractedTasks = [];
+    loadTasks();
+  }
+}
+
+async function deleteTask(id) {
+  await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+  loadTasks();
+}
+
+async function loadTasks() {
+  const company_id = document.getElementById('task-company-filter').value;
+  const status = document.getElementById('task-status-filter').value;
+  const params = new URLSearchParams();
+  if (company_id) params.set('company_id', company_id);
+  if (status) params.set('status', status);
+
+  const res = await fetch('/api/tasks?' + params);
+  const tasks = await res.json();
+  document.getElementById('task-count').textContent = `${tasks.length} task(s)`;
+  renderTaskList(tasks);
+}
+
+function renderTaskList(tasks) {
+  const container = document.getElementById('task-list');
+  if (!tasks.length) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">✓</div><p>No tasks found.</p></div>';
+    return;
+  }
+
+  container.innerHTML = tasks.map(t => `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:3px;padding:12px 16px;margin-bottom:8px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <div style="flex:1">
+        <button onclick="pushToZoho(${t.id})"style="background:none;border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.62rem;cursor:pointer;padding:4px 8px;border-radius:2px"title="Push to Zoho">Zoho</button>
+          <div style="font-family:var(--cond);font-weight:700;font-size:1rem;color:var(--text);margin-bottom:2px">${escHtml(t.title || '—')}</div>
+          <div style="font-family:var(--mono);font-size:0.62rem;color:var(--blue);margin-bottom:6px">${escHtml(t.company_name || '—')}</div>
+          <textarea
+            style="width:100%;background:transparent;border:1px solid transparent;color:var(--text2);font-family:var(--sans);font-size:0.78rem;padding:3px 6px;border-radius:2px;resize:vertical"
+            rows="2"
+            onblur="updateTask(${t.id}, 'description', this.value)"
+          >${escHtml(t.description || '')}</textarea>
+          <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap;align-items:center">
+            <input
+              placeholder="Assignee"
+              style="background:transparent;border:1px solid transparent;color:var(--text3);font-family:var(--mono);font-size:0.68rem;padding:3px 6px;border-radius:2px;outline:none"
+              value="${escHtml(t.assignee || '')}"
+              onblur="updateTask(${t.id}, 'assignee', this.value)"
+            >
+            <input
+              type="date"
+              style="background:transparent;border:1px solid transparent;color:var(--text3);font-family:var(--mono);font-size:0.68rem;padding:3px 6px;border-radius:2px;outline:none"
+              value="${t.due_date || ''}"
+              onchange="updateTask(${t.id}, 'due_date', this.value)"
+            >
+          </div>
+        </div>
+        <select
+          class="sort-select"
+          style="flex-shrink:0"
+          onchange="updateTask(${t.id}, 'status', this.value)"
+        >
+          ${['To Do','In Progress','Done'].map(s =>
+            `<option value="${s}" ${t.status === s ? 'selected' : ''}>${s}</option>`
+          ).join('')}
+        </select>
+        <button onclick="deleteTask(${t.id})"
+        style="background:none;border:none;color:var(--text3);font-size:0.8rem;cursor:pointer;padding:4px;line-height:1"title="Delete task">✕</button>
+      </div>
+      <div style="font-family:var(--mono);font-size:0.58rem;color:var(--text3);margin-top:8px">${t.created_at ? t.created_at.split('T')[0] : ''}</div>
+    </div>
+  `).join('');
+}
+
+async function updateTask(id, field, value) {
+  await fetch(`/api/tasks/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ [field]: value })
+  });
+}
+
+
+// load company list when tasks tab is opened
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (btn.dataset.tab === 'tasks') {
+      loadCompanyList();
+      loadTasks();
+    }
+  });
+});
+
+// Taiga
+
+// async function pushToTaiga(id) {
+//   try {
+//     const res = await fetch(`/api/tasks/${id}/push-taiga`, { method: 'POST' });
+//     const data = await res.json();
+//     if (data.ok) {
+//       window.open(data.url, '_blank');
+//     } else {
+//       alert('Failed to push to Taiga: ' + JSON.stringify(data.error));
+//     }
+//   } catch(e) {
+//     alert('Error: ' + e.message);
+//   }
+// }
+
+// zoho
+async function pushToZoho(id) {
+  try {
+    const res = await fetch(`/api/tasks/${id}/push-zoho`, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      alert(data.account_matched
+        ? 'Task pushed to Zoho and linked to matching account.'
+        : 'Task pushed to Zoho. No matching account found, task is unlinked.'
+      );
+    } else {
+      alert('Failed to push to Zoho: ' + JSON.stringify(data.error));
+    }
+  } catch(e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+// ── SINGLE OCR ────────────────────────────────────────────────────────────
+let singleOcrPeopleCount = 0;
+
+function setOcrMode(mode) {
+  document.getElementById('ocr-bulk-form').style.display = mode === 'bulk' ? '' : 'none';
+  document.getElementById('ocr-single-form').style.display = mode === 'single' ? '' : 'none';
+  document.getElementById('ocr-single-review').style.display = 'none';
+  document.getElementById('ocr-mode-bulk').classList.toggle('active', mode === 'bulk');
+  document.getElementById('ocr-mode-single').classList.toggle('active', mode === 'single');
+}
+
+async function runSingleOcr() {
+  const front = document.getElementById('ocr-single-front').files[0];
+  const back = document.getElementById('ocr-single-back').files[0];
+  const status = document.getElementById('ocr-single-status');
+
+  if (!front) { status.textContent = 'Please select a front image.'; return; }
+
+  status.textContent = 'Extracting...';
+  const formData = new FormData();
+  formData.append('images', front);
+  if (back) formData.append('images', back);
+
+  try {
+    const res = await fetch('/mobile/scan', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    status.textContent = '';
+    renderSingleOcrReview(data);
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+function renderSingleOcrReview(data) {
+  const company = data.company || {};
+  const people = data.people || [];
+  singleOcrPeopleCount = people.length;
+
+  const safeVal = v => v || '';
+  const safeList = v => Array.isArray(v) ? v.filter(Boolean).join(', ') : '';
+
+  let html = `
+    <div style="margin-bottom:12px">
+      <div class="form-label" style="margin-bottom:6px">Company</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div class="form-group" style="flex:1;min-width:180px">
+          <label class="form-label">Name</label>
+          <input class="form-input" id="sr-company-name" value="${escHtml(safeVal(company.name))}">
+        </div>
+        <div class="form-group" style="flex:1;min-width:180px">
+          <label class="form-label">Phones</label>
+          <input class="form-input" id="sr-company-phones" value="${escHtml(safeList(company.phones))}">
+        </div>
+        <div class="form-group" style="flex:1;min-width:180px">
+          <label class="form-label">Websites</label>
+          <input class="form-input" id="sr-company-websites" value="${escHtml(safeList(company.websites))}">
+        </div>
+        <div class="form-group" style="flex:2;min-width:200px">
+          <label class="form-label">Address</label>
+          <input class="form-input" id="sr-company-addresses" value="${escHtml(safeList(company.addresses))}">
+        </div>
+        <div class="form-group" style="flex:2;min-width:200px">
+          <label class="form-label">Company Info</label>
+          <input class="form-input" id="sr-company-info" value="${escHtml(safeVal(company.company_info))}">
+        </div>
+      </div>
+    </div>
+    ${people.map((p, i) => `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:3px;padding:10px;margin-bottom:8px">
+      <div class="form-label" style="color:var(--amber2);margin-bottom:6px">Person ${i+1}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div class="form-group" style="flex:1;min-width:140px">
+          <label class="form-label">Name</label>
+          <input class="form-input" id="sr-p${i}-name" value="${escHtml(safeVal(p.name))}">
+        </div>
+        <div class="form-group" style="flex:1;min-width:140px">
+          <label class="form-label">Role</label>
+          <input class="form-input" id="sr-p${i}-role" value="${escHtml(safeVal(p.role))}">
+        </div>
+        <div class="form-group" style="flex:1;min-width:140px">
+          <label class="form-label">Phones</label>
+          <input class="form-input" id="sr-p${i}-phones" value="${escHtml(safeList(p.phones))}">
+        </div>
+        <div class="form-group" style="flex:1;min-width:140px">
+          <label class="form-label">Emails</label>
+          <input class="form-input" id="sr-p${i}-emails" value="${escHtml(safeList(p.emails))}">
+        </div>
+      </div>
+    </div>`).join('')}
+  `;
+
+  document.getElementById('ocr-single-review-body').innerHTML = html;
+  document.getElementById('ocr-single-review').style.display = 'block';
+}
+
+async function saveSingleOcr() {
+  const splitList = v => v.split(',').map(s => s.trim()).filter(Boolean);
+  const status = document.getElementById('ocr-single-save-status');
+
+  const data = {
+    company: {
+      name: document.getElementById('sr-company-name').value,
+      phones: splitList(document.getElementById('sr-company-phones').value),
+      websites: splitList(document.getElementById('sr-company-websites').value),
+      addresses: splitList(document.getElementById('sr-company-addresses').value),
+      company_info: document.getElementById('sr-company-info').value,
+      additional_info: null,
+    },
+    people: []
+  };
+
+  for (let i = 0; i < singleOcrPeopleCount; i++) {
+    data.people.push({
+      name: document.getElementById(`sr-p${i}-name`)?.value || '',
+      role: document.getElementById(`sr-p${i}-role`)?.value || '',
+      phones: splitList(document.getElementById(`sr-p${i}-phones`)?.value || ''),
+      emails: splitList(document.getElementById(`sr-p${i}-emails`)?.value || ''),
+    });
+  }
+
+  status.textContent = 'Saving...';
+  try {
+    const res = await fetch('/mobile/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const result = await res.json();
+    if (!result.ok) throw new Error('Save failed');
+    status.textContent = `Saved! ${result.people_saved} contact(s) added.`;
+    status.style.color = 'var(--green)';
+    setTimeout(() => resetSingleOcr(), 2000);
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+    status.style.color = 'var(--red)';
+  }
+}
+
+function resetSingleOcr() {
+  document.getElementById('ocr-single-front').value = '';
+  document.getElementById('ocr-single-back').value = '';
+  document.getElementById('ocr-single-review').style.display = 'none';
+  document.getElementById('ocr-single-status').textContent = '';
+  document.getElementById('ocr-single-save-status').textContent = '';
+  singleOcrPeopleCount = 0;
+}
+
+// ── SINGLE ENRICH ─────────────────────────────────────────────────────────
+function setEnrichMode(mode) {
+  document.getElementById('enrich-bulk-form').style.display = mode === 'bulk' ? '' : 'none';
+  document.getElementById('enrich-single-form').style.display = mode === 'single' ? '' : 'none';
+  document.getElementById('enrich-mode-bulk').classList.toggle('active', mode === 'bulk');
+  document.getElementById('enrich-mode-single').classList.toggle('active', mode === 'single');
+  if (mode === 'single') loadEnrichCompanyList();
+}
+
+async function loadEnrichCompanyList() {
+  const sel = document.getElementById('enrich-single-company');
+  try {
+    const res = await fetch('/api/companies/list');
+    const companies = await res.json();
+    sel.innerHTML = '<option value="">Select company...</option>' +
+      companies.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+  } catch(e) {}
+}
+
+async function runSingleEnrich() {
+  const company_id = document.getElementById('enrich-single-company').value;
+  if (!company_id) { alert('Please select a company.'); return; }
+
+  const btn = document.getElementById('btn-enrich-single');
+  const tbody = document.getElementById('tbody-enrich');
+  btn.disabled = true;
+  setStatus('enrich', 'running', 'RUNNING');
+  document.getElementById('term-enrich').classList.add('running');
+  tbody.innerHTML = `<span class="t-line t-dim">$ python enrich2.py --single ${company_id}</span>\n`;
+
+  try {
+    const res = await fetch('/api/enrich/single', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_id: parseInt(company_id) }),
+    });
+    const { job_id, error } = await res.json();
+    if (error) throw new Error(error);
+
+    const es = new EventSource(`/api/pipeline/output/${job_id}`);
+    es.onmessage = (e) => {
+      if (e.data === '__DONE__') {
+        es.close();
+        setStatus('enrich', 'done', 'DONE');
+        btn.disabled = false;
+        document.getElementById('term-enrich').classList.remove('running');
+        appendLine(tbody, '$ Process exited.', 't-done');
+        refreshStats();
+        return;
+      }
+      const cls = e.data.startsWith('ERROR') ? 't-err' : e.data.includes('WARNING') ? 't-warn' : '';
+      appendLine(tbody, e.data, cls);
+    };
+    es.onerror = () => {
+      es.close();
+      setStatus('enrich', 'error', 'ERROR');
+      btn.disabled = false;
+      document.getElementById('term-enrich').classList.remove('running');
+      appendLine(tbody, 'Connection to server lost.', 't-err');
+    };
+  } catch(e) {
+    setStatus('enrich', 'error', 'ERROR');
+    btn.disabled = false;
+    appendLine(tbody, `ERROR: ${e.message}`, 't-err');
+  }
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+loadCompanies();
+</script>
+</body>
+</html>

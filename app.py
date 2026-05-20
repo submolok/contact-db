@@ -1,0 +1,1112 @@
+import json
+import os
+import sqlite3
+import subprocess
+import threading
+import time
+import uuid
+from collections import defaultdict
+from pathlib import Path
+from datetime import datetime
+import re
+import sys
+
+from dotenv import load_dotenv
+load_dotenv()
+
+from db_addition import save_categories, save_flag, resolve_flag, get_flagged
+from flask import Flask, Response, jsonify, render_template, request, stream_with_context
+
+import requests
+
+import mobile.script_mobile as mobile_ocr
+
+# we can remove the taiga stuff. keeping it just in case we want to rollback
+TAIGA_USERNAME = os.getenv("TAIGA_USERNAME")
+TAIGA_PASSWORD = os.getenv("TAIGA_PASSWORD")
+TAIGA_API_URL = "https://api.taiga.io/api/v1"
+
+ZOHO_CLIENT_ID = os.getenv("ZOHO_CLIENT_ID")
+ZOHO_CLIENT_SECRET = os.getenv("ZOHO_CLIENT_SECRET")
+ZOHO_REFRESH_TOKEN = os.getenv("ZOHO_REFRESH_TOKEN")
+ZOHO_BASE_URL = os.getenv("ZOHO_BASE_URL", "https://www.zohoapis.in/crm/v2")
+ZOHO_ACCOUNTS_URL = os.getenv("ZOHO_ACCOUNTS_URL", "https://accounts.zoho.in")
+
+app = Flask(__name__)
+
+DB_PATH = os.environ.get("DB_PATH", str(Path(__file__).parent / "contacts.db"))
+
+# ── live process registry ─────────────────────────────────────────────────────
+_processes: dict[str, dict] = {}  # job_id → {proc, output, done}
+_process_lock = threading.Lock()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  DB helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def get_companies_filtered(categories=None, industries=None, types=None, search=None, sort_by="name", sort_dir="asc"):
+    conn = get_db()
+    cur = conn.cursor()
+
+    sql = """
+        SELECT
+            c.id AS id,
+            c.name,
+            c.addresses,
+            c.phones,
+            c.websites,
+            c.company_info,
+            c.source_folder,
+            e.primary_industry,
+            e.sub_industry,
+            e.company_type,
+            e.products,
+            e.markets,
+            e.domain,
+            GROUP_CONCAT(cc.category, '||') AS categories,
+            c.notes
+        FROM companies c
+        LEFT JOIN enrichment e ON e.contact_id = c.id
+        LEFT JOIN company_categories cc ON cc.company_id = c.id
+        WHERE 1=1
+    """
+    params = []
+
+    if search:
+        sql += """
+            AND (
+                c.name LIKE ?
+                OR e.domain LIKE ?
+                OR c.company_info LIKE ?
+                OR EXISTS (
+                    SELECT 1 FROM people p
+                    WHERE p.company_id = c.id
+                    AND (p.name LIKE ? OR p.emails LIKE ?)
+                )
+            )
+        """
+        params += [f"%{search}%"] * 5
+
+    if industries:
+        placeholders = ",".join("?" * len(industries))
+        sql += f" AND e.primary_industry IN ({placeholders})"
+        params += industries
+
+    if types:
+        type_conditions = " OR ".join(["e.company_type LIKE ?" for _ in types])
+        sql += f" AND ({type_conditions})"
+        params += [f"%{t}%" for t in types]
+
+    sql += " GROUP BY c.id"
+
+    if categories:
+        placeholders = ",".join("?" * len(categories))
+        sql = f"""
+            SELECT sub.id, sub.name, sub.addresses, sub.phones, sub.websites,
+                   sub.company_info, sub.source_folder, sub.primary_industry,
+                   sub.sub_industry, sub.company_type, sub.products, sub.markets,
+                   sub.domain, sub.categories, sub.notes
+            FROM ({sql}) sub
+            WHERE EXISTS (
+                SELECT 1 FROM company_categories cc2
+                WHERE cc2.company_id = sub.id
+                AND cc2.category IN ({placeholders})
+            )
+        """
+        params += categories
+
+    valid_sorts = {"name", "primary_industry", "domain", "id"}
+    if sort_by not in valid_sorts:
+        sort_by = "name"
+    sort_dir = "DESC" if sort_dir == "desc" else "ASC"
+    sql += f" ORDER BY {sort_by} {sort_dir}"
+
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def get_all_categories():
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT DISTINCT category FROM company_categories ORDER BY category")
+        return [r["category"] for r in cur.fetchall()]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+
+
+def get_all_industries():
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT DISTINCT primary_industry FROM enrichment WHERE primary_industry IS NOT NULL ORDER BY primary_industry")
+        return [r["primary_industry"] for r in cur.fetchall()]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+
+
+def get_all_types():
+    """Extract distinct company types from the JSON list stored in enrichment.company_type."""
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT company_type FROM enrichment WHERE company_type IS NOT NULL")
+        rows = cur.fetchall()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+
+    seen = set()
+    for row in rows:
+        try:
+            types = json.loads(row["company_type"])
+            if isinstance(types, list):
+                for t in types:
+                    if t and isinstance(t, str):
+                        seen.add(t.strip())
+            elif isinstance(types, str) and types:
+                seen.add(types.strip())
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return sorted(seen)
+
+
+def get_stats():
+    conn = get_db()
+    cur = conn.cursor()
+    stats = {}
+    try:
+        cur.execute("SELECT COUNT(*) as n FROM companies")
+        stats["companies"] = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) as n FROM people")
+        stats["people"] = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) as n FROM enrichment WHERE domain IS NOT NULL")
+        stats["enriched"] = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(DISTINCT category) as n FROM company_categories")
+        stats["categories"] = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) as n FROM flagged WHERE status = 'active'")
+        stats["flagged"] = cur.fetchone()["n"]
+    except sqlite3.OperationalError:
+        stats = {"companies": 0, "people": 0, "enriched": 0, "categories": 0, "flagged": 0}
+    conn.close()
+    return stats
+
+
+def get_people_for_company(company_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM people WHERE company_id = ?", (company_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Taiga helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+# def get_taiga_token():
+#     res = requests.post(f"{TAIGA_API_URL}/auth", json={
+#         "type": "normal",
+#         "username": TAIGA_USERNAME,
+#         "password": TAIGA_PASSWORD,
+#     })
+#     data = res.json()
+#     return data.get("auth_token")
+
+
+# # def get_taiga_project_id(token):
+# #     res = requests.get(
+# #         f"{TAIGA_API_URL}/projects/by_slug?slug={TAIGA_PROJECT_SLUG}",
+# #         headers={"Authorization": f"Bearer {token}"}
+# #     )
+# #     return res.json().get("id")
+
+
+# def taiga_create_issue(title, description, project_id, due_date=None):
+#     token = get_taiga_token()
+#     if not token:
+#         return None, "Failed to authenticate with Taiga", None
+
+#     payload = {
+#         "project": project_id,
+#         "subject": title,
+#         "description": description or "",
+#     }
+#     if due_date:
+#         payload["due_date"] = due_date
+
+#     res = requests.post(
+#         f"{TAIGA_API_URL}/userstories",
+#         json=payload,
+#         headers={"Authorization": f"Bearer {token}"}
+#     )
+#     data = res.json()
+#     if res.status_code == 201:
+#         return data.get("ref"), None, data.get("id")
+#     else:
+#         return None, data, None
+
+# # Slug helpers
+
+# def make_project_slug(company_name):
+#     slug = company_name.lower()
+#     slug = re.sub(r'[^a-z0-9]+', '-', slug)
+#     slug = slug.strip('-')
+#     return f"yl-{slug}"
+
+
+# def get_or_create_taiga_project(company_id, company_name, token):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT taiga_project_id, taiga_project_slug FROM companies WHERE id = ?",
+        (company_id,)
+    ).fetchone()
+    conn.close()
+
+    if row and row["taiga_project_id"] and row["taiga_project_slug"]:
+        return row["taiga_project_id"], row["taiga_project_slug"], None
+
+    # create new project
+    res = requests.post(
+        f"{TAIGA_API_URL}/projects",
+        json={
+            "name": company_name,
+            "description": f"YantraLive project for {company_name}",
+            "is_private": True,
+        },
+        headers={"Authorization": f"Bearer {token}"}
+    )
+
+    if res.status_code != 201:
+        return None, None, f"Failed to create Taiga project: {res.text}"
+
+    data = res.json()
+    project_id = data.get("id")
+    project_slug = data.get("slug")
+
+    conn = get_db()
+    conn.execute(
+        "UPDATE companies SET taiga_project_id = ?, taiga_project_slug = ? WHERE id = ?",
+        (project_id, project_slug, company_id)
+    )
+    conn.commit()
+    conn.close()
+
+    return project_id, project_slug, None
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Zoho CRM helpers
+# ─────────────────────────────────────────────────────────────────────────────
+def get_zoho_access_token():
+    res = requests.post(f"{ZOHO_ACCOUNTS_URL}/oauth/v2/token", data={
+        "grant_type": "refresh_token",
+        "client_id": ZOHO_CLIENT_ID,
+        "client_secret": ZOHO_CLIENT_SECRET,
+        "refresh_token": ZOHO_REFRESH_TOKEN,
+    })
+    data = res.json()
+    return data.get("access_token")
+
+
+def zoho_search_account(name, token):
+    """Search for an existing Account by name, return its ID or None."""
+    res = requests.get(
+        f"{ZOHO_BASE_URL}/Accounts/search",
+        params={"criteria": f"Account_Name:equals:{name}"},
+        headers={"Authorization": f"Zoho-oauthtoken {token}"}
+    )
+    if res.status_code == 200:
+        data = res.json().get("data", [])
+        if data:
+            return data[0]["id"]
+    return None
+
+
+def zoho_create_task(title, description, due_date, account_id, token):
+    """Create a Task in Zoho CRM, optionally linked to an Account."""
+    payload = {
+        "data": [{
+            "Subject": title,
+            "Description": description or "",
+            "Status": "Not Started",
+            "Due_Date": due_date or None,
+        }]
+    }
+    if account_id:
+        payload["data"][0]["What_Id"] = account_id
+        payload["data"][0]["$se_module"] = "Accounts"
+
+    res = requests.post(
+        f"{ZOHO_BASE_URL}/Tasks",
+        json=payload,
+        headers={"Authorization": f"Zoho-oauthtoken {token}"}
+    )
+    return res.status_code in (200, 201), res.json()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# User-agent check for mobile
+# ─────────────────────────────────────────────────────────────────────────────
+
+def is_mobile():
+    ua = request.headers.get('User-Agent', '').lower()
+    mobile_keywords = ['mobile', 'android', 'iphone', 'ipad', 'ipod', 'blackberry', 'windows phone']
+    return any(kw in ua for kw in mobile_keywords)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Routes
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/")
+def index():
+    stats = get_stats()
+    categories = get_all_categories()
+    industries = get_all_industries()
+    types = get_all_types()
+    if is_mobile():
+        return render_template("mobile.html", stats=stats, categories=categories, industries=industries, types=types)
+    return render_template("index.html", stats=stats, categories=categories, industries=industries, types=types)
+
+
+@app.route("/api/companies")
+def api_companies():
+    cats = request.args.getlist("cat")
+    industries = request.args.getlist("industry")
+    types = request.args.getlist("type")
+    search = request.args.get("q", "").strip() or None
+    sort_by = request.args.get("sort", "name")
+    sort_dir = request.args.get("dir", "asc")
+
+    rows = get_companies_filtered(
+        categories=cats or None,
+        industries=industries or None,
+        types=types or None,
+        search=search,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+
+    result = []
+    for r in rows:
+        cats_list = list(set(r["categories"].split("||"))) if r["categories"] else []
+        # parse JSON fields
+        def safe_json(v):
+            if not v or v == "null":
+                return []
+            try:
+                parsed = json.loads(v)
+                if parsed is None:
+                    return []
+                if isinstance(parsed, list):
+                    return [i for i in parsed if i is not None]
+                return [parsed]
+            except Exception:
+                return [v]
+
+        result.append({
+            "id": r["id"],
+            "name": r["name"],
+            "domain": r["domain"],
+            "primary_industry": r["primary_industry"],
+            "sub_industry": r["sub_industry"],
+            "company_type": safe_json(r["company_type"]),
+            "products": safe_json(r["products"]),
+            "markets": safe_json(r["markets"]),
+            "categories": sorted(cats_list),
+            "websites": safe_json(r["websites"]),
+            "phones": safe_json(r["phones"]),
+            "addresses": safe_json(r["addresses"]),
+            "notes": r["notes"] or "",
+        })
+    return jsonify(result)
+
+
+@app.route("/api/company/<int:company_id>/people")
+def api_people(company_id):
+    people = get_people_for_company(company_id)
+    result = []
+    for p in people:
+        def safe_json(v):
+            if not v or v == "null":
+                return []
+            try:
+                parsed = json.loads(v)
+                if parsed is None:
+                    return []
+                if isinstance(parsed, list):
+                    return [i for i in parsed if i is not None]
+                return [parsed]
+            except Exception:
+                return [v]
+        result.append({
+            "id": p["id"],
+            "name": p["name"],
+            "role": p["role"],
+            "phones": safe_json(p["phones"]),
+            "emails": safe_json(p["emails"]),
+        })
+    return jsonify(result)
+
+
+@app.route("/api/stats")
+def api_stats():
+    return jsonify(get_stats())
+
+
+@app.route("/api/company/<int:company_id>/notes", methods=["POST"])
+def save_notes(company_id):
+    notes = (request.json or {}).get("notes", "")
+    conn = get_db()
+    conn.execute("UPDATE companies SET notes = ? WHERE id = ?", (notes, company_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/company/<int:company_id>/domain", methods=["POST"])
+def save_domain(company_id):
+    domain = (request.json or {}).get("domain", "").strip()
+    if not domain:
+        return jsonify({"error": "no domain provided"}), 400
+    domain = domain.replace("https://", "").replace("http://", "").rstrip("/")
+    conn = get_db()
+    conn.execute("UPDATE companies SET websites = ? WHERE id = ?",
+                 (json.dumps([domain]), company_id))
+    conn.commit()
+    conn.close()
+    resolve_flag(DB_PATH, company_id, "no_domain", "resolved")
+    return jsonify({"ok": True})
+
+@app.route("/api/transcript", methods=["POST"])
+def process_transcript():
+    data = request.json or {}
+    transcript = data.get("transcript", "").strip()
+    if not transcript:
+        return jsonify({"error": "no transcript provided"}), 400
+
+    import openai
+    client = openai.OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{
+            "role": "user",
+            "content": f"""You are extracting action items from a meeting transcript.
+Return a JSON object with two keys:
+- "company": the company name mentioned most in the context of action items (or null if unclear)
+- "tasks": list of objects each with: title, description, assignee, due_date (YYYY-MM-DD or null)
+
+Return only JSON, no explanation.
+
+Transcript:
+{transcript[:8000]}"""
+        }]
+    )
+    raw = response.choices[0].message.content
+    clean = raw.replace("```json", "").replace("```", "").strip()
+    try:
+        result = json.loads(clean)
+    except json.JSONDecodeError:
+        return jsonify({"error": "failed to parse GPT response"}), 500
+
+    # fuzzy match company name to DB
+    suggested_company = None
+    suggested_company_id = None
+    gpt_company = result.get("company")
+    if gpt_company:
+        conn = get_db()
+        rows = conn.execute("SELECT id, name FROM companies").fetchall()
+        conn.close()
+        gpt_lower = gpt_company.lower()
+        best_match = None
+        best_score = 0
+        for row in rows:
+            name = row["name"] or ""
+            # simple overlap score
+            score = sum(1 for word in gpt_lower.split() if word in name.lower())
+            if score > best_score:
+                best_score = score
+                best_match = row
+        if best_match and best_score > 0:
+            suggested_company = best_match["name"]
+            suggested_company_id = best_match["id"]
+
+    return jsonify({
+        "tasks": result.get("tasks", []),
+        "suggested_company": suggested_company,
+        "suggested_company_id": suggested_company_id,
+    })
+
+
+@app.route("/api/tasks", methods=["POST"])
+def save_tasks():
+    data = request.json or {}
+    company_id = data.get("company_id")
+    tasks = data.get("tasks", [])
+    transcript = data.get("transcript", "")
+
+    conn = get_db()
+    for task in tasks:
+        conn.execute("""
+            INSERT INTO tasks (company_id, title, description, assignee, due_date, status, source_transcript, created_at)
+            VALUES (?, ?, ?, ?, ?, 'To Do', ?, ?)
+        """, (
+            company_id,
+            task.get("title"),
+            task.get("description"),
+            task.get("assignee"),
+            task.get("due_date"),
+            transcript,
+            datetime.now().isoformat()
+        ))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "saved": len(tasks)})
+
+@app.route("/api/tasks/<int:task_id>", methods=["DELETE"])
+def delete_task(task_id):
+    conn = get_db()
+    conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/tasks", methods=["GET"])
+def get_tasks():
+    company_id = request.args.get("company_id")
+    status = request.args.get("status")
+    conn = get_db()
+    sql = """
+        SELECT t.*, c.name as company_name
+        FROM tasks t
+        LEFT JOIN companies c ON c.id = t.company_id
+        WHERE 1=1
+    """
+    params = []
+    if company_id:
+        sql += " AND t.company_id = ?"
+        params.append(company_id)
+    if status:
+        sql += " AND t.status = ?"
+        params.append(status)
+    sql += " ORDER BY t.created_at DESC"
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/tasks/<int:task_id>", methods=["PATCH"])
+def update_task(task_id):
+    data = request.json or {}
+    allowed = {"title", "description", "assignee", "due_date", "status"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if not updates:
+        return jsonify({"error": "nothing to update"}), 400
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [task_id]
+    conn = get_db()
+    conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", values)
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/companies/list")
+def api_companies_list():
+    conn = get_db()
+    rows = conn.execute("SELECT id, name FROM companies ORDER BY name").fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route("/api/enrich/single", methods=["POST"])
+def enrich_single():
+    company_id = (request.json or {}).get("company_id")
+    if not company_id:
+        return jsonify({"error": "company_id required"}), 400
+
+    job_id = str(uuid.uuid4())[:8]
+
+    def run():
+        cmd = [sys.executable, "enrich2.py", "--single", str(company_id)]
+        _stream_process(job_id, cmd)
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    return jsonify({"job_id": job_id})
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Taiga routes
+# ─────────────────────────────────────────────────────────────────────────────
+
+# some taiga thing
+
+# @app.route("/api/tasks/<int:task_id>/push-taiga", methods=["POST"])
+# def push_to_taiga(task_id):
+#     conn = get_db()
+#     task = conn.execute("""
+#         SELECT t.*, c.name as company_name
+#         FROM tasks t
+#         LEFT JOIN companies c ON c.id = t.company_id
+#         WHERE t.id = ?
+#     """, (task_id,)).fetchone()
+#     conn.close()
+
+#     if not task:
+#         return jsonify({"error": "task not found"}), 404
+
+#     token = get_taiga_token()
+#     if not token:
+#         return jsonify({"error": "Failed to authenticate with Taiga"}), 500
+
+#     project_id, project_slug, error = get_or_create_taiga_project(
+#         task["company_id"], task["company_name"], token
+#     )
+#     if error:
+#         return jsonify({"error": error}), 500
+
+#     ref, error, taiga_id = taiga_create_issue(
+#         title=task["title"],
+#         description=task["description"],
+#         project_id=project_id,
+#         due_date=task["due_date"],
+#     )
+#     if error:
+#         return jsonify({"error": error}), 500
+
+#     url = f"https://tree.taiga.io/project/{project_slug}/us/{ref}"
+#     return jsonify({"ok": True, "url": url, "ref": ref})
+
+# @app.route("/api/tasks/<int:task_id>/push-taiga", methods=["POST"])
+# def push_to_taiga(task_id):
+#     conn = get_db()
+#     task = conn.execute("""
+#         SELECT t.*, c.name as company_name
+#         FROM tasks t
+#         LEFT JOIN companies c ON c.id = t.company_id
+#         WHERE t.id = ?
+#     """, (task_id,)).fetchone()
+#     conn.close()
+
+#     if not task:
+#         return jsonify({"error": "task not found"}), 404
+
+#     token = get_taiga_token()
+#     if not token:
+#         return jsonify({"error": "Failed to authenticate with Taiga"}), 500
+
+#     project_id, project_slug, error = get_or_create_taiga_project(
+#         task["company_id"], task["company_name"], token
+#     )
+#     if error:
+#         return jsonify({"error": error}), 500
+
+#     ref, error, taiga_id = taiga_create_issue(
+#         title=task["title"],
+#         description=task["description"],
+#         project_id=project_id,
+#         due_date=task["due_date"],
+#     )
+#     if error:
+#         return jsonify({"error": error}), 500
+
+#     url = f"https://tree.taiga.io/project/{project_slug}/us/{ref}"
+#     return jsonify({"ok": True, "url": url, "ref": ref})
+
+# ─────────────────────────────────────────────────────────────────────────────
+# zoho routes
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@app.route("/api/tasks/<int:task_id>/push-zoho", methods=["POST"])
+def push_to_zoho(task_id):
+    conn = get_db()
+    task = conn.execute("""
+        SELECT t.*, c.name as company_name
+        FROM tasks t
+        LEFT JOIN companies c ON c.id = t.company_id
+        WHERE t.id = ?
+    """, (task_id,)).fetchone()
+    conn.close()
+
+    if not task:
+        return jsonify({"error": "task not found"}), 404
+
+    token = get_zoho_access_token()
+    if not token:
+        return jsonify({"error": "Failed to get Zoho access token"}), 500
+
+    # search for matching account
+    account_id = None
+    if task["company_name"]:
+        account_id = zoho_search_account(task["company_name"], token)
+
+    success, result = zoho_create_task(
+        title=task["title"],
+        description=task["description"],
+        due_date=task["due_date"],
+        account_id=account_id,
+        token=token,
+    )
+
+    if success:
+        return jsonify({"ok": True, "account_matched": account_id is not None})
+    else:
+        return jsonify({"error": result}), 500
+    
+# ─────────────────────────────────────────────────────────────────────────────
+#  Mobile routes
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/mobile")
+def mobile_index():
+    return render_template("mobile.html")
+
+
+@app.route("/mobile/scan", methods=["POST"])
+def mobile_scan():
+    files = request.files.getlist("images")
+    if not files or len(files) == 0:
+        return jsonify({"error": "no images provided"}), 400
+    if len(files) > 2:
+        return jsonify({"error": "maximum 2 images (front and back)"}), 400
+
+    images = []
+    for f in files:
+        mime_type = mobile_ocr.get_mime_type(f.filename)
+        if not mime_type:
+            return jsonify({"error": f"unsupported file type: {f.filename}"}), 400
+        images.append((f.read(), mime_type))
+
+    run_id = mobile_ocr.make_run_id()
+    data = mobile_ocr.read_business_card_bytes(images, run_id)
+
+    if not data:
+        return jsonify({"error": "failed to extract data from image"}), 500
+
+    return jsonify(data)
+
+
+@app.route("/mobile/save", methods=["POST"])
+def mobile_save():
+    data = request.json or {}
+    if not data:
+        return jsonify({"error": "no data provided"}), 400
+
+    import db_addition as newdb
+    newdb.init_db(DB_PATH)
+    company_id = newdb.save_company(DB_PATH, data, "mobile")
+    newdb.save_people(DB_PATH, company_id, data)
+
+    return jsonify({
+        "ok": True,
+        "company_id": company_id,
+        "people_saved": len(data.get("people", []))
+    })
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Flagged routes
+# ─────────────────────────────────────────────────────────────────────────────
+
+CANONICAL_CATEGORIES = [
+    "Earthmoving Equipment",
+    "Concrete & Paving Equipment",
+    "Lifting & Material Handling",
+    "Crushing & Screening",
+    "Drilling & Piling Equipment",
+    "Mining Equipment",
+    "Power Generation & Compressors",
+    "Road & Infrastructure Construction",
+    "Spare Parts & Components",
+    "Tyres & Wheels",
+    "Hydraulic Systems & Attachments",
+    "Lubricants & Fluids",
+    "Telematics & Machine Control",
+    "Logistics & Transport",
+    "Finance & Services",
+    "Raw & Construction Materials",
+    "Automobiles & Vehicles",
+]
+
+
+@app.route("/api/flagged")
+def api_flagged():
+    rows = get_flagged(DB_PATH)
+    result = []
+    for r in rows:
+        products = []
+        if r["products"]:
+            try:
+                parsed = json.loads(r["products"])
+                if isinstance(parsed, list):
+                    products = [p for p in parsed if p]
+            except Exception:
+                pass
+        result.append({
+            "flag_id": r["flag_id"],
+            "company_id": r["company_id"],
+            "company_name": r["company_name"],
+            "reason": r["reason"],
+            "created_at": r["created_at"],
+            "domain": r["domain"],
+            "products": products,
+        })
+    return jsonify(result)
+
+
+@app.route("/api/flagged/categories")
+def api_flag_categories():
+    return jsonify(CANONICAL_CATEGORIES)
+
+
+@app.route("/api/flagged/<int:flag_id>/dismiss", methods=["POST"])
+def api_dismiss_flag(flag_id):
+    conn = get_db()
+    row = conn.execute("SELECT company_id, reason FROM flagged WHERE id = ?", (flag_id,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"error": "flag not found"}), 404
+    resolve_flag(DB_PATH, row["company_id"], row["reason"], "dismissed")
+    return jsonify({"ok": True})
+
+
+@app.route("/api/flagged/<int:flag_id>/assign", methods=["POST"])
+def api_assign_flag(flag_id):
+    data = request.json or {}
+    categories = data.get("categories", [])
+    if not categories:
+        return jsonify({"error": "no categories provided"}), 400
+
+    conn = get_db()
+    row = conn.execute("SELECT company_id, reason FROM flagged WHERE id = ?", (flag_id,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"error": "flag not found"}), 404
+
+    save_categories(DB_PATH, row["company_id"], categories)
+    resolve_flag(DB_PATH, row["company_id"], row["reason"], "resolved")
+    return jsonify({"ok": True})
+
+
+@app.route("/api/flagged/<int:flag_id>/gpt", methods=["POST"])
+def api_gpt_suggest(flag_id):
+    conn = get_db()
+    row = conn.execute("""
+        SELECT f.company_id, f.reason, e.products
+        FROM flagged f
+        LEFT JOIN enrichment e ON e.contact_id = f.company_id
+        WHERE f.id = ?
+    """, (flag_id,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"error": "flag not found"}), 404
+
+    products = []
+    if row["products"]:
+        try:
+            parsed = json.loads(row["products"])
+            if isinstance(parsed, list):
+                products = [p for p in parsed if p]
+        except Exception:
+            pass
+
+    if not products:
+        return jsonify({"error": "no products to classify"}), 400
+
+    try:
+        import openai
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{
+                "role": "user",
+                "content": f"""You are classifying a company into product categories for a B2B heavy equipment marketplace serving MENA and Africa.
+
+The company's products/services are:
+{json.dumps(products, indent=2)}
+
+The available categories are:
+{json.dumps(CANONICAL_CATEGORIES, indent=2)}
+
+Return a JSON array of the category names that best match this company. Only include categories that are a genuine match. Return only JSON, no explanation."""
+            }],
+        )
+        raw = response.choices[0].message.content
+        clean = raw.replace("```json", "").replace("```", "").strip()
+        suggested = json.loads(clean)
+        if not isinstance(suggested, list):
+            suggested = []
+        # filter to only valid canonical categories
+        suggested = [c for c in suggested if c in CANONICAL_CATEGORIES]
+        return jsonify({"categories": suggested})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/flagged/gpt-bulk", methods=["POST"])
+def api_gpt_bulk():
+    rows = get_flagged(DB_PATH)
+    # only process no_category_match flags since others don't have products to classify
+    to_process = [r for r in rows if r["reason"] == "no_category_match"]
+
+    results = {"resolved": 0, "failed": 0, "skipped": 0}
+
+    try:
+        import openai
+        client = openai.OpenAI()
+    except Exception as e:
+        return jsonify({"error": f"OpenAI init failed: {e}"}), 500
+
+    for row in to_process:
+        products = []
+        if row["products"]:
+            try:
+                parsed = json.loads(row["products"])
+                if isinstance(parsed, list):
+                    products = [p for p in parsed if p]
+            except Exception:
+                pass
+
+        if not products:
+            results["skipped"] += 1
+            continue
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{
+                    "role": "user",
+                    "content": f"""You are classifying a company into product categories for a B2B heavy equipment marketplace serving MENA and Africa.
+
+The company's products/services are:
+{json.dumps(products, indent=2)}
+
+The available categories are:
+{json.dumps(CANONICAL_CATEGORIES, indent=2)}
+
+Return a JSON array of the category names that best match this company. Only include categories that are a genuine match. Return only JSON, no explanation."""
+                }],
+            )
+            raw = response.choices[0].message.content
+            clean = raw.replace("```json", "").replace("```", "").strip()
+            suggested = json.loads(clean)
+            if not isinstance(suggested, list):
+                suggested = []
+            suggested = [c for c in suggested if c in CANONICAL_CATEGORIES]
+
+            if suggested:
+                save_categories(DB_PATH, row["company_id"], suggested)
+                resolve_flag(DB_PATH, row["company_id"], "no_category_match", "resolved")
+                results["resolved"] += 1
+            else:
+                results["skipped"] += 1
+        except Exception:
+            results["failed"] += 1
+
+    return jsonify(results)
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Pipeline execution + SSE streaming
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _stream_process(job_id: str, cmd: list[str], cwd: str = None):
+    """Run a subprocess and buffer its output for SSE."""
+    with _process_lock:
+        _processes[job_id] = {"output": [], "done": False, "proc": None}
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=cwd or str(Path(__file__).parent),
+            bufsize=1,
+        )
+        with _process_lock:
+            _processes[job_id]["proc"] = proc
+
+        for line in proc.stdout:
+            with _process_lock:
+                _processes[job_id]["output"].append(line.rstrip())
+
+        proc.wait()
+    except Exception as e:
+        with _process_lock:
+            _processes[job_id]["output"].append(f"ERROR: {e}")
+    finally:
+        with _process_lock:
+            _processes[job_id]["done"] = True
+
+
+@app.route("/api/pipeline/start", methods=["POST"])
+def start_pipeline():
+    data = request.json or {}
+    pipeline = data.get("pipeline")  # "ocr" | "enrich" | "normalize"
+    job_id = str(uuid.uuid4())[:8]
+
+    if pipeline == "ocr":
+        folder = data.get("folder", "")
+        if not folder:
+            return jsonify({"error": "folder required"}), 400
+        cmd = ["python", "script.py", folder]
+    elif pipeline == "enrich":
+        cmd = ["python", "enrich2.py"]
+    elif pipeline == "normalize":
+        cmd = ["python", "normalizer.py", "--db", DB_PATH]
+    else:
+        return jsonify({"error": "unknown pipeline"}), 400
+
+    t = threading.Thread(target=_stream_process, args=(job_id, cmd), daemon=True)
+    t.start()
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/api/pipeline/output/<job_id>")
+def pipeline_output(job_id):
+    """SSE endpoint — streams buffered + new output lines."""
+
+    def generate():
+        sent = 0
+        while True:
+            with _process_lock:
+                job = _processes.get(job_id)
+            if not job:
+                yield "data: Job not found\n\n"
+                return
+
+            with _process_lock:
+                lines = job["output"][sent:]
+                done = job["done"]
+
+            for line in lines:
+                yield f"data: {line}\n\n"
+            sent += len(lines)
+
+            if done and sent >= len(_processes.get(job_id, {}).get("output", [])):
+                yield "data: __DONE__\n\n"
+                return
+
+            time.sleep(0.3)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host='0.0.0.0', port=5050)

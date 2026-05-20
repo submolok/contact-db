@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>YantraLive Field</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #0a0b0d;
+  --bg2:      #111318;
+  --bg3:      #181c23;
+  --border:   #242830;
+  --border2:  #2e3440;
+  --amber:    #f5a623;
+  --amber2:   #ffbe4f;
+  --amber-dim:#7a5210;
+  --red:      #e05a4e;
+  --green:    #4caf74;
+  --blue:     #4a8fe8;
+  --text:     #dde2ec;
+  --text2:    #8b93a6;
+  --text3:    #5a6070;
+  --mono:     'Space Mono', monospace;
+  --sans:     'Barlow', sans-serif;
+  --cond:     'Barlow Condensed', sans-serif;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+/* ── TOPBAR ── */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 52px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.logo-mark {
+  width: 24px; height: 24px;
+  background: var(--amber);
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+}
+.logo-name {
+  font-family: var(--cond);
+  font-weight: 800;
+  font-size: 1.1rem;
+  letter-spacing: 0.05em;
+}
+.logo-name span { color: var(--amber); }
+.logo-badge {
+  font-family: var(--mono);
+  font-size: 0.5rem;
+  color: var(--text3);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+
+/* ── TABS ── */
+.tabs {
+  display: flex;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 52px;
+  z-index: 99;
+}
+.tab {
+  flex: 1;
+  height: 44px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text3);
+  font-family: var(--cond);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  position: relative;
+  top: 1px;
+}
+.tab.active { color: var(--amber); border-bottom-color: var(--amber); }
+
+/* ── PANELS ── */
+.panel { display: none; padding: 16px; padding-bottom: 40px; }
+.panel.active { display: block; }
+
+/* ── SCAN PANEL ── */
+.section-title {
+  font-family: var(--cond);
+  font-weight: 800;
+  font-size: 1.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.section-desc {
+  font-size: 0.8rem;
+  color: var(--text2);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+/* camera capture area */
+.capture-area {
+  background: var(--bg2);
+  border: 2px dashed var(--border2);
+  border-radius: 8px;
+  padding: 24px 16px;
+  text-align: center;
+  margin-bottom: 12px;
+  transition: border-color 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.capture-area.has-image {
+  border-style: solid;
+  border-color: var(--amber-dim);
+  padding: 0;
+}
+.capture-area img {
+  width: 100%;
+  border-radius: 6px;
+  display: block;
+}
+.capture-icon {
+  font-size: 2.5rem;
+  margin-bottom: 10px;
+  opacity: 0.4;
+}
+.capture-label {
+  font-family: var(--cond);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text3);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+.capture-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  background: var(--amber);
+  color: #000;
+  border: none;
+  border-radius: 4px;
+  font-family: var(--cond);
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.capture-btn:hover { background: var(--amber2); }
+.capture-btn.secondary {
+  background: var(--bg3);
+  color: var(--text2);
+  border: 1px solid var(--border2);
+}
+
+/* image slot row */
+.image-slots {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.slot {
+  background: var(--bg2);
+  border: 2px dashed var(--border2);
+  border-radius: 8px;
+  aspect-ratio: 1.6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  overflow: hidden;
+  position: relative;
+}
+.slot.filled {
+  border-style: solid;
+  border-color: var(--amber-dim);
+}
+.slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.slot-label {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  color: var(--text3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.slot-icon { font-size: 1.4rem; opacity: 0.3; }
+.slot-remove {
+  position: absolute;
+  top: 4px; right: 4px;
+  width: 20px; height: 20px;
+  background: rgba(0,0,0,0.6);
+  border: none;
+  border-radius: 50%;
+  color: var(--text2);
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* hidden file inputs */
+input[type=file] { display: none; }
+
+/* action button */
+.btn-primary {
+  width: 100%;
+  padding: 14px;
+  background: var(--amber);
+  color: #000;
+  border: none;
+  border-radius: 4px;
+  font-family: var(--cond);
+  font-weight: 800;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-bottom: 10px;
+}
+.btn-primary:hover { background: var(--amber2); }
+.btn-primary:disabled {
+  background: var(--border2);
+  color: var(--text3);
+  cursor: not-allowed;
+}
+.btn-secondary {
+  width: 100%;
+  padding: 12px;
+  background: none;
+  color: var(--text2);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-bottom: 10px;
+}
+.btn-secondary:hover { border-color: var(--text3); color: var(--text); }
+
+/* status bar */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--text3);
+  margin-bottom: 16px;
+}
+.status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--text3);
+  flex-shrink: 0;
+}
+.status-dot.loading {
+  background: var(--amber);
+  animation: pulse 1s ease-in-out infinite;
+}
+.status-dot.success { background: var(--green); }
+.status-dot.error { background: var(--red); }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.2; } }
+
+/* result card */
+.result-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.result-card-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.result-card-title {
+  font-family: var(--cond);
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: var(--text);
+}
+.result-card-sub {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--text3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.result-card-body { padding: 12px 14px; }
+.result-field {
+  margin-bottom: 10px;
+}
+.result-field-label {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 3px;
+}
+.result-field-value {
+  font-size: 0.85rem;
+  color: var(--text2);
+  line-height: 1.4;
+  word-break: break-word;
+}
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  font-family: var(--cond);
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 2px;
+  margin: 2px 2px 2px 0;
+  background: rgba(245,166,35,0.12);
+  color: var(--amber2);
+  border: 1px solid rgba(245,166,35,0.25);
+}
+
+/* person cards */
+.person-card {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.person-name {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.person-role {
+  font-size: 0.75rem;
+  color: var(--text3);
+  margin-bottom: 6px;
+}
+.person-contact {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--blue);
+  word-break: break-all;
+  margin-bottom: 2px;
+}
+
+/* ── TASKS PANEL ── */
+.task-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.task-filter-btn {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--text3);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  border-radius: 2px;
+  cursor: pointer;
+  letter-spacing: 0.06em;
+  transition: all 0.15s;
+}
+.task-filter-btn.active {
+  color: var(--amber);
+  border-color: var(--amber-dim);
+  background: rgba(245,166,35,0.08);
+}
+.task-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.task-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.task-title {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text);
+  line-height: 1.2;
+}
+.task-status {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.status-todo { background: rgba(139,147,166,0.1); color: var(--text3); border: 1px solid var(--border2); }
+.status-inprogress { background: rgba(74,143,232,0.12); color: #7ab4f5; border: 1px solid rgba(74,143,232,0.25); }
+.status-done { background: rgba(76,175,116,0.12); color: #7ecfa0; border: 1px solid rgba(76,175,116,0.25); }
+.task-company {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--blue);
+  margin-bottom: 6px;
+}
+.task-desc {
+  font-size: 0.8rem;
+  color: var(--text2);
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+.task-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.task-meta-item {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--text3);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* empty state */
+.empty {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--text3);
+}
+.empty-icon { font-size: 2.5rem; opacity: 0.3; margin-bottom: 10px; }
+.empty p { font-family: var(--mono); font-size: 0.72rem; }
+
+/* spinner */
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--amber);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* divider */
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
+}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<header class="topbar">
+  <div class="logo">
+    <div class="logo-mark"></div>
+    <div class="logo-name">Yantra<span>Live</span></div>
+    <span class="logo-badge">Field</span>
+  </div>
+</header>
+
+<!-- TABS -->
+<nav class="tabs">
+  <button class="tab active" data-tab="scan">
+    <span>⬡</span> Scan
+  </button>
+  <button class="tab" data-tab="tasks">
+    <span>✓</span> Tasks
+  </button>
+  <button class="tab" data-tab="addtask">
+    <span>+</span> Add Task
+  </button>
+</nav>
+
+<!-- SCAN PANEL -->
+<div class="panel active" id="panel-scan">
+
+  <div class="section-title">Scan Card</div>
+  <div class="section-desc">Take a photo of a business card. Add a second photo if there's a back.</div>
+
+  <!-- image slots -->
+  <div class="image-slots">
+    <div class="slot" id="slot-front" onclick="triggerCapture('front')">
+      <div class="slot-icon">📷</div>
+      <div class="slot-label">Front</div>
+    </div>
+    <div class="slot" id="slot-back" onclick="triggerCapture('back')">
+      <div class="slot-icon">📷</div>
+      <div class="slot-label">Back (optional)</div>
+    </div>
+  </div>
+
+  <!-- hidden file inputs — capture="" opens camera on mobile -->
+  <input type="file" id="input-front" accept="image/*" capture="environment" onchange="onImageSelected('front', this)">
+  <input type="file" id="input-back" accept="image/*" capture="environment" onchange="onImageSelected('back', this)">
+
+  <!-- status -->
+  <div class="status-bar" id="scan-status" style="display:none">
+    <div class="status-dot" id="scan-dot"></div>
+    <span id="scan-status-text"></span>
+  </div>
+
+  <!-- action buttons -->
+  <button class="btn-primary" id="btn-scan" onclick="scanCard()" disabled>⚡ Extract Details</button>
+  <button class="btn-secondary" id="btn-reset" onclick="resetScan()" style="display:none">↺ Scan Another</button>
+
+  <!-- result -->
+  <div id="scan-result" style="display:none">
+    <hr class="divider">
+
+    <!-- company card -->
+    <div class="result-card" id="company-card">
+      <div class="result-card-header">
+        <div>
+          <div class="result-card-title" id="res-company-name">—</div>
+          <div class="result-card-sub">Company</div>
+        </div>
+      </div>
+      <div class="result-card-body">
+        <div class="result-field" id="res-address-wrap">
+          <div class="result-field-label">Address</div>
+          <div class="result-field-value" id="res-address"></div>
+        </div>
+        <div class="result-field" id="res-phone-wrap">
+          <div class="result-field-label">Phone</div>
+          <div class="result-field-value" id="res-phones"></div>
+        </div>
+        <div class="result-field" id="res-website-wrap">
+          <div class="result-field-label">Website</div>
+          <div class="result-field-value" id="res-websites"></div>
+        </div>
+        <div class="result-field" id="res-info-wrap">
+          <div class="result-field-label">Company Info</div>
+          <div class="result-field-value" id="res-info"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- people cards -->
+    <div id="people-cards"></div>
+
+    <!-- save button -->
+    <button class="btn-primary" id="btn-save" onclick="saveCard()">💾 Save to Database</button>
+  </div>
+
+</div>
+
+<!-- TASKS PANEL -->
+<div class="panel" id="panel-tasks">
+
+  <div class="section-title">My Tasks</div>
+  <div class="section-desc">Tasks assigned across all companies.</div>
+
+  <div class="task-filters">
+    <button class="task-filter-btn active" data-status="" onclick="setTaskFilter('')">All</button>
+    <button class="task-filter-btn" data-status="To Do" onclick="setTaskFilter('To Do')">To Do</button>
+    <button class="task-filter-btn" data-status="In Progress" onclick="setTaskFilter('In Progress')">In Progress</button>
+    <button class="task-filter-btn" data-status="Done" onclick="setTaskFilter('Done')">Done</button>
+  </div>
+
+  <div id="task-list">
+    <div class="empty">
+      <div class="empty-icon">✓</div>
+      <p>Loading tasks…</p>
+    </div>
+  </div>
+
+</div>
+
+<!-- add task -->
+
+<div class="panel" id="panel-addtask">
+  <div class="section-title">New Task</div>
+  <div class="section-desc">Add a task manually.</div>
+
+  <div class="field-group">
+    <div class="field-label">Company</div>
+    <select class="field-input" id="task-company" style="color:var(--text2)">
+      <option value="">Select company…</option>
+    </select>
+  </div>
+  <div class="field-group">
+    <div class="field-label">Task Title</div>
+    <input class="field-input" type="text" id="task-title" placeholder="What needs to be done?">
+  </div>
+  <div class="field-group">
+    <div class="field-label">Description</div>
+    <textarea class="field-input" id="task-desc" placeholder="Details…"></textarea>
+  </div>
+  <div class="field-group">
+    <div class="field-label">Assignee</div>
+    <input class="field-input" type="text" id="task-assignee" placeholder="Who is responsible?">
+  </div>
+  <div class="field-group">
+    <div class="field-label">Due Date</div>
+    <input class="field-input" type="date" id="task-due">
+  </div>
+  <button class="btn-primary" onclick="saveManualTask()">Save Task</button>
+  <div class="status-bar" id="task-save-status" style="display:none">
+    <div class="status-dot" id="task-save-dot"></div>
+    <span id="task-save-text"></span>
+  </div>
+</div>
+
+<script>
+// ── STATE ─────────────────────────────────────────────────────────────────
+const images = { front: null, back: null }; // { file, dataUrl }
+let extractedData = null;
+let taskStatusFilter = '';
+
+// ── TABS ──────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'tasks') loadTasks();
+    if (btn.dataset.tab === 'addtask') loadCompanyList();
+  });
+});
+
+// ── CAMERA ────────────────────────────────────────────────────────────────
+function triggerCapture(side) {
+  document.getElementById(`input-${side}`).click();
+}
+
+function onImageSelected(side, input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    images[side] = { file, dataUrl: e.target.result };
+    renderSlot(side);
+    updateScanButton();
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderSlot(side) {
+  const slot = document.getElementById(`slot-${side}`);
+  const img = images[side];
+  if (img) {
+    slot.classList.add('filled');
+    slot.innerHTML = `
+      <img src="${img.dataUrl}" alt="${side}">
+      <button class="slot-remove" onclick="removeImage('${side}', event)">×</button>
+    `;
+  } else {
+    slot.classList.remove('filled');
+    slot.innerHTML = `
+      <div class="slot-icon">📷</div>
+      <div class="slot-label">${side === 'front' ? 'Front' : 'Back (optional)'}</div>
+    `;
+  }
+}
+
+function removeImage(side, event) {
+  event.stopPropagation();
+  images[side] = null;
+  document.getElementById(`input-${side}`).value = '';
+  renderSlot(side);
+  updateScanButton();
+}
+
+function updateScanButton() {
+  document.getElementById('btn-scan').disabled = !images.front;
+}
+
+// ── SCAN ──────────────────────────────────────────────────────────────────
+function setStatus(state, text) {
+  const bar = document.getElementById('scan-status');
+  const dot = document.getElementById('scan-dot');
+  const label = document.getElementById('scan-status-text');
+  bar.style.display = 'flex';
+  dot.className = `status-dot ${state}`;
+  label.textContent = text;
+}
+
+async function scanCard() {
+  if (!images.front) return;
+
+  setStatus('loading', 'Extracting details…');
+  document.getElementById('btn-scan').disabled = true;
+  document.getElementById('scan-result').style.display = 'none';
+
+  const formData = new FormData();
+  formData.append('images', images.front.file);
+  if (images.back) formData.append('images', images.back.file);
+
+  try {
+    const res = await fetch('/mobile/scan', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    extractedData = data;
+    renderResult(data);
+    setStatus('success', 'Extraction complete');
+    document.getElementById('scan-result').style.display = 'block';
+    document.getElementById('btn-scan').style.display = 'none';
+    document.getElementById('btn-reset').style.display = 'block';
+
+  } catch(e) {
+    setStatus('error', `Error: ${e.message}`);
+    document.getElementById('btn-scan').disabled = false;
+  }
+}
+
+function renderResult(data) {
+  const company = data.company || {};
+  const people = data.people || [];
+
+  // company
+  document.getElementById('res-company-name').textContent = company.name || '—';
+
+  setField('res-address', 'res-address-wrap',
+    (company.addresses || []).filter(Boolean).join('\n'));
+
+  setField('res-phones', 'res-phone-wrap',
+    (company.phones || []).filter(Boolean).join('\n'));
+
+  setField('res-websites', 'res-website-wrap',
+    (company.websites || []).filter(Boolean).map(w =>
+      `<a href="${w.startsWith('http')?w:'https://'+w}" style="color:var(--blue)">${w}</a>`
+    ).join('<br>'));
+
+  setField('res-info', 'res-info-wrap', company.company_info || '');
+
+  // people
+  const container = document.getElementById('people-cards');
+  container.innerHTML = people.map(p => `
+    <div class="person-card">
+      <div class="person-name">${esc(p.name || '—')}</div>
+      <div class="person-role">${esc(p.role || '')}</div>
+      ${(p.emails||[]).map(e => `<div class="person-contact">✉ ${esc(e)}</div>`).join('')}
+      ${(p.phones||[]).map(ph => `<div class="person-contact">✆ ${esc(ph)}</div>`).join('')}
+    </div>
+  `).join('');
+}
+
+function setField(valueId, wrapId, value) {
+  const wrap = document.getElementById(wrapId);
+  const el = document.getElementById(valueId);
+  if (value) {
+    el.innerHTML = value.replace ? value.replace(/\n/g, '<br>') : value;
+    wrap.style.display = 'block';
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+
+async function saveCard() {
+  if (!extractedData) return;
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true;
+  btn.textContent = '⟳ Saving…';
+
+  try {
+    const res = await fetch('/mobile/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(extractedData)
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error('Save failed');
+    btn.textContent = '✓ Saved';
+    btn.style.background = 'var(--green)';
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '💾 Save to Database';
+    setStatus('error', `Save failed: ${e.message}`);
+  }
+}
+
+function resetScan() {
+  images.front = null;
+  images.back = null;
+  extractedData = null;
+  document.getElementById('input-front').value = '';
+  document.getElementById('input-back').value = '';
+  renderSlot('front');
+  renderSlot('back');
+  document.getElementById('scan-result').style.display = 'none';
+  document.getElementById('scan-status').style.display = 'none';
+  document.getElementById('btn-scan').style.display = 'block';
+  document.getElementById('btn-scan').disabled = true;
+  document.getElementById('btn-reset').style.display = 'none';
+}
+
+// ── TASKS ─────────────────────────────────────────────────────────────────
+function setTaskFilter(status) {
+  taskStatusFilter = status;
+  document.querySelectorAll('.task-filter-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.status === status);
+  });
+  loadTasks();
+}
+
+async function loadTasks() {
+  const container = document.getElementById('task-list');
+  container.innerHTML = '<div class="empty"><span class="spinner"></span></div>';
+
+  const params = new URLSearchParams();
+  if (taskStatusFilter) params.set('status', taskStatusFilter);
+
+  try {
+    const res = await fetch('/api/tasks?' + params);
+    const tasks = await res.json();
+    renderTasks(tasks);
+  } catch(e) {
+    container.innerHTML = `<div class="empty"><p>Error loading tasks</p></div>`;
+  }
+}
+
+function renderTasks(tasks) {
+  const container = document.getElementById('task-list');
+  if (!tasks.length) {
+    container.innerHTML = `<div class="empty"><div class="empty-icon">✓</div><p>No tasks found.</p></div>`;
+    return;
+  }
+
+  const statusClass = { 'To Do': 'status-todo', 'In Progress': 'status-inprogress', 'Done': 'status-done' };
+
+  container.innerHTML = tasks.map(t => `
+    <div class="task-card">
+      <div class="task-card-top">
+        <div class="task-title">${esc(t.title || '—')}</div>
+        <span class="task-status ${statusClass[t.status] || 'status-todo'}">${esc(t.status || 'To Do')}</span>
+      </div>
+      <div class="task-company">${esc(t.company_name || '—')}</div>
+      ${t.description ? `<div class="task-desc">${esc(t.description)}</div>` : ''}
+      <div class="task-meta">
+        ${t.assignee ? `<span class="task-meta-item">👤 ${esc(t.assignee)}</span>` : ''}
+        ${t.due_date ? `<span class="task-meta-item">📅 ${esc(t.due_date)}</span>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── ADD TASK ──────────────────────────────────────────────────────────────
+async function loadCompanyList() {
+  const sel = document.getElementById('task-company');
+  try {
+    const res = await fetch('/api/companies/list');
+    const companies = await res.json();
+    sel.innerHTML = '<option value="">Select company…</option>' +
+      companies.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  } catch(e) {}
+}
+
+async function saveManualTask() {
+  const title = document.getElementById('task-title').value.trim();
+  const dot = document.getElementById('task-save-dot');
+  const text = document.getElementById('task-save-text');
+  const bar = document.getElementById('task-save-status');
+  bar.style.display = 'flex';
+
+  if (!title) {
+    dot.className = 'status-dot error';
+    text.textContent = 'Title is required.';
+    return;
+  }
+
+  dot.className = 'status-dot loading';
+  text.textContent = 'Saving…';
+
+  const task = {
+    title,
+    description: document.getElementById('task-desc').value,
+    assignee: document.getElementById('task-assignee').value,
+    due_date: document.getElementById('task-due').value || null,
+  };
+  const company_id = document.getElementById('task-company').value;
+
+  try {
+    const res = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_id: company_id || null, tasks: [task], transcript: '' }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error('Save failed');
+    dot.className = 'status-dot success';
+    text.textContent = 'Task saved!';
+    ['task-title','task-desc','task-assignee','task-due'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('task-company').value = '';
+  } catch(e) {
+    dot.className = 'status-dot error';
+    text.textContent = 'Error: ' + e.message;
+  }
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

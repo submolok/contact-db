@@ -1,0 +1,6 @@
+flask
+openai
+firecrawl-py
+python-dotenv
+requests
+gunicorn
