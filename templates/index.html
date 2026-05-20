@@ -46,6 +46,24 @@
   --terminal-bg: #1e2030;
   --terminal-text: #a6da95;
 }
+body.sus {
+  --bg:       #0d0a1a;
+  --bg2:      #130f24;
+  --bg3:      #1a1530;
+  --border:   #2a2045;
+  --border2:  #362a5e;
+  --amber:    #c084fc;
+  --amber2:   #e879f9;
+  --amber-dim:#6b21a8;
+  --red:      #f43f5e;
+  --green:    #34d399;
+  --blue:     #38bdf8;
+  --text:     #f0e6ff;
+  --text2:    #a78bca;
+  --text3:    #6b5a8a;
+  --terminal-bg: #130f24;
+  --terminal-text: #c084fc;
+}
   /* --bg:       #0a0b0d;
   --bg2:      #111318;
   --bg3:      #181c23;
@@ -1516,6 +1534,44 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
 });
 
+// ── ',:) ────────────────────────────────────────────────────────────
+
+let logoClickCount = 0;
+let logoClickTimer = null;
+
+document.querySelector('.logo-mark').style.cursor = 'pointer';
+document.querySelector('.logo-mark').addEventListener('click', () => {
+  logoClickCount++;
+  clearTimeout(logoClickTimer);
+  logoClickTimer = setTimeout(() => { logoClickCount = 0; }, 2000);
+
+  if (logoClickCount >= 6) {
+    logoClickCount = 0;
+    lastSupper();
+  }
+});
+
+function lastSupper() {
+  document.body.classList.remove('dark', 'light');
+  document.body.classList.add('sus');
+  document.getElementById('theme-btn').textContent = 'ඞ';
+}
+
+function toggleTheme() {
+  const isSupper = document.body.classList.contains('sus');
+  const isDark = document.body.classList.contains('dark');
+  document.body.classList.remove('dark', 'light', 'sus');
+  if (isSupper || isDark) {
+    document.body.classList.add('light');
+    document.getElementById('theme-btn').textContent = '🌙 DARK';
+    localStorage.setItem('theme', 'light');
+  } else {
+    document.body.classList.add('dark');
+    document.getElementById('theme-btn').textContent = '☀ LIGHT';
+    localStorage.setItem('theme', 'dark');
+  }
+}
+
 // ── CATEGORY FILTER ───────────────────────────────────────────────────────
 function getSelectedCats() {
   return [...document.querySelectorAll('#cat-list input:checked')].map(i => i.value);
@@ -1865,14 +1921,6 @@ async function refreshStats() {
       badge.style.display = 'none';
     }
   } catch(e) {}
-}
-
-function toggleTheme() {
-  const isDark = document.body.classList.contains('dark');
-  document.body.classList.toggle('dark', !isDark);
-  document.body.classList.toggle('light', isDark);
-  document.getElementById('theme-btn').textContent = isDark ? '☀ LIGHT' : '🌙 DARK';
-  localStorage.setItem('theme', isDark ? 'light' : 'dark');
 }
 
 // restore saved preference on load
