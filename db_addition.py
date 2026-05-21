@@ -1,16 +1,24 @@
-import sqlite3
 import json
+import psycopg2             # replace with sqlite3 if needed
+from psycopg2 import extras
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
+def get_conn():
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    conn.cursor_factory = extras.RealDictCursor
+    return conn
 
 # initialze the DB
 
-def init_db(db_path: str):
-    conn = sqlite3.connect(db_path)
+def init_db():
+    conn = get_conn()
     cursor = conn.cursor()
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS companies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY SERIAL,
             name TEXT,
             addresses TEXT,
             phones TEXT,
@@ -25,23 +33,26 @@ def init_db(db_path: str):
     # migrate existing DBs that don't have the notes column yet
     try:
         cursor.execute("ALTER TABLE companies ADD COLUMN notes TEXT")
-    except sqlite3.OperationalError:
-        pass  # column already exists
+        conn.commit()
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback() # column already exists
 
     # migrate existing DBs that don't have the taiga_project_id column yet
     try:
         cursor.execute("ALTER TABLE companies ADD COLUMN taiga_project_id INTEGER")
-    except sqlite3.OperationalError:
-        pass
+        conn.commit()
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback()
 
     try:
         cursor.execute("ALTER TABLE companies ADD COLUMN taiga_project_slug TEXT")
-    except sqlite3.OperationalError:
-        pass
+        conn.commit()
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback()
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS people (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             company_id INTEGER,
             name TEXT,
             role TEXT,
@@ -53,7 +64,7 @@ def init_db(db_path: str):
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS company_categories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             company_id INTEGER NOT NULL,
             category TEXT NOT NULL,
             FOREIGN KEY (company_id) REFERENCES companies(id)
@@ -72,7 +83,7 @@ def init_db(db_path: str):
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS flagged (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             company_id INTEGER NOT NULL,
             reason TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'active',
@@ -94,7 +105,7 @@ def init_db(db_path: str):
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         company_id INTEGER,
         title TEXT,
         description TEXT,
@@ -171,16 +182,15 @@ def _merge_text(existing, new):
 
 # Saves company to DB (Updated to handle merging)
 
-def save_company(db_path: str, data: dict, source_folder: str) -> int | None:
+def save_company(data: dict, source_folder: str) -> int | None:
     company = data.get("company", {})
     name = (company.get("name") or "").strip()
 
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = get_conn()
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT * FROM companies WHERE TRIM(LOWER(name)) = ?",
+        "SELECT * FROM companies WHERE TRIM(LOWER(name)) = %s",
         (name.lower(),)
     )
     existing = cursor.fetchone()
@@ -196,12 +206,12 @@ def save_company(db_path: str, data: dict, source_folder: str) -> int | None:
 
         cursor.execute("""
             UPDATE companies
-            SET addresses       = ?,
-                phones          = ?,
-                websites        = ?,
-                company_info    = ?,
-                additional_info = ?
-            WHERE id = ?
+            SET addresses       = %s,
+                phones          = %s,
+                websites        = %s,
+                company_info    = %s,
+                additional_info = %s
+            WHERE id = %s
         """, (
             merged_addresses,
             merged_phones,
@@ -215,7 +225,7 @@ def save_company(db_path: str, data: dict, source_folder: str) -> int | None:
     else:
         cursor.execute("""
             INSERT INTO companies (name, addresses, phones, websites, company_info, additional_info, source_folder)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (
             name or company.get("name"),
             normalize(company.get("addresses")),
@@ -235,9 +245,9 @@ def save_company(db_path: str, data: dict, source_folder: str) -> int | None:
 
 # Saves people to DB (Also updates)
 
-def save_people(db_path: str, company_id: int | None, data: dict):
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+def save_people(company_id: int | None, data: dict):
+    conn = get_conn()
+    # conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
     for person in data.get("people", []):
@@ -246,7 +256,7 @@ def save_people(db_path: str, company_id: int | None, data: dict):
             continue
 
         cursor.execute(
-            "SELECT * FROM people WHERE company_id = ? AND TRIM(LOWER(name)) = ?",
+            "SELECT * FROM people WHERE company_id = %s AND TRIM(LOWER(name)) = %s",
             (company_id, name.lower())
         )
         existing = cursor.fetchone()
@@ -258,16 +268,16 @@ def save_people(db_path: str, company_id: int | None, data: dict):
 
             cursor.execute("""
                 UPDATE people
-                SET phones = ?,
-                    emails = ?,
-                    role   = ?
-                WHERE id = ?
+                SET phones = %s,
+                    emails = %s,
+                    role   = %s
+                WHERE id = %s
             """, (merged_phones, merged_emails, merged_role, existing["id"]))
 
         else:
             cursor.execute("""
                 INSERT INTO people (company_id, name, role, phones, emails)
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s)
             """, (
                 company_id,
                 name,
@@ -282,19 +292,19 @@ def save_people(db_path: str, company_id: int | None, data: dict):
 
 # Assign categories
 
-def save_categories(db_path: str, company_id: int, categories: list[str]):
+def save_categories(company_id: int, categories: list[str]):
     if not categories:
         return
 
-    conn = sqlite3.connect(db_path)
+    conn = get_conn()
     cursor = conn.cursor()
 
     cursor.execute(
-        "DELETE FROM company_categories WHERE company_id = ?",
+        "DELETE FROM company_categories WHERE company_id = %s",
         (company_id,)
     )
     cursor.executemany(
-        "INSERT INTO company_categories (company_id, category) VALUES (?, ?)",
+        "INSERT INTO company_categories (company_id, category) VALUES (%s, %s)",
         [(company_id, cat) for cat in categories]
     )
 
@@ -304,11 +314,11 @@ def save_categories(db_path: str, company_id: int, categories: list[str]):
 
 # Shows categories asscocitaed with a company
 
-def get_categories(db_path: str, company_id: int) -> list[str]:
-    conn = sqlite3.connect(db_path)
+def get_categories(company_id: int) -> list[str]:
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT category FROM company_categories WHERE company_id = ? ORDER BY category",
+        "SELECT category FROM company_categories WHERE company_id = %s ORDER BY category",
         (company_id,)
     )
     rows = cursor.fetchall()
@@ -318,8 +328,8 @@ def get_categories(db_path: str, company_id: int) -> list[str]:
 
 # Shows all existing categories
 
-def get_all_categories(db_path: str) -> list[str]:
-    conn = sqlite3.connect(db_path)
+def get_all_categories() -> list[str]:
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT DISTINCT category FROM company_categories ORDER BY category"
@@ -328,56 +338,55 @@ def get_all_categories(db_path: str) -> list[str]:
     conn.close()
     return [row[0] for row in rows]
 
-def save_flag(db_path: str, company_id: int, reason: str):
+def save_flag(company_id: int, reason: str):
     """
     Insert a flag for a company. Skips if an active flag with the same
     reason already exists — safe to call on every pipeline run.
     """
     from datetime import datetime
-    conn = sqlite3.connect(db_path)
+    conn = get_conn()
     cursor = conn.cursor()
 
     cursor.execute("""
         SELECT id FROM flagged
-        WHERE company_id = ? AND reason = ? AND status = 'active'
+        WHERE company_id = %s AND reason = %s AND status = 'active'
     """, (company_id, reason))
 
     if cursor.fetchone() is None:
         cursor.execute("""
             INSERT INTO flagged (company_id, reason, status, created_at)
-            VALUES (?, ?, 'active', ?)
+            VALUES (%s, %s, 'active', %s)
         """, (company_id, reason, datetime.now().isoformat()))
 
     conn.commit()
     conn.close()
 
 
-def resolve_flag(db_path: str, company_id: int, reason: str, status: str):
+def resolve_flag(company_id: int, reason: str, status: str):
     """
     Update all active flags for a company+reason to the given status.
     status should be 'resolved' or 'dismissed'.
     """
     from datetime import datetime
-    conn = sqlite3.connect(db_path)
+    conn = get_conn()
     cursor = conn.cursor()
 
     cursor.execute("""
         UPDATE flagged
-        SET status = ?, resolved_at = ?
-        WHERE company_id = ? AND reason = ? AND status = 'active'
+        SET status = %s, resolved_at = %s
+        WHERE company_id = %s AND reason = %s AND status = 'active'
     """, (status, datetime.now().isoformat(), company_id, reason))
-
     conn.commit()
     conn.close()
 
 
-def get_flagged(db_path: str) -> list:
+def get_flagged() -> list:
     """
     Return all active flagged companies joined with company name
     and their raw products from enrichment.
     """
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = get_conn()
+    # conn.row_factory = psycopg2.extras.RealDictCursor
     cursor = conn.cursor()
 
     cursor.execute("""

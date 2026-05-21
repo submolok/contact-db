@@ -1,6 +1,8 @@
 import json
 import os
-import sqlite3
+import psycopg2         # replace with sqlite3 if needed
+import psycopg2.extras
+from psycopg2 import pool
 import subprocess
 import threading
 import time
@@ -13,6 +15,12 @@ import sys
 
 from dotenv import load_dotenv
 load_dotenv()
+
+connection_pool = pool.SimpleConnectionPool(
+    minconn=1,
+    maxconn=10,
+    dsn=os.getenv("DATABASE_URL")
+)
 
 from db_addition import save_categories, save_flag, resolve_flag, get_flagged
 from flask import Flask, Response, jsonify, render_template, request, stream_with_context
@@ -34,7 +42,7 @@ ZOHO_ACCOUNTS_URL = os.getenv("ZOHO_ACCOUNTS_URL", "https://accounts.zoho.in")
 
 app = Flask(__name__)
 
-DB_PATH = os.environ.get("DB_PATH", str(Path(__file__).parent / "contacts.db"))
+# DB_PATH = os.environ.get("DB_PATH", str(Path(__file__).parent / "contacts.db"))
 
 # ── live process registry ─────────────────────────────────────────────────────
 _processes: dict[str, dict] = {}  # job_id → {proc, output, done}
@@ -46,9 +54,12 @@ _process_lock = threading.Lock()
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = connection_pool.getconn()
+    conn.cursor_factory = psycopg2.extras.RealDictCursor
     return conn
+
+def close_db(conn):
+    connection_pool.putconn(conn)
 
 
 def get_companies_filtered(categories=None, industries=None, types=None, search=None, sort_by="name", sort_dir="asc"):
@@ -70,7 +81,7 @@ def get_companies_filtered(categories=None, industries=None, types=None, search=
             e.products,
             e.markets,
             e.domain,
-            GROUP_CONCAT(cc.category, '||') AS categories,
+            STRING_AGG(cc.category, '||') AS categories,
             c.notes
         FROM companies c
         LEFT JOIN enrichment e ON e.contact_id = c.id
@@ -82,32 +93,32 @@ def get_companies_filtered(categories=None, industries=None, types=None, search=
     if search:
         sql += """
             AND (
-                c.name LIKE ?
-                OR e.domain LIKE ?
-                OR c.company_info LIKE ?
+                c.name LIKE %s
+                OR e.domain LIKE %s
+                OR c.company_info LIKE %s
                 OR EXISTS (
                     SELECT 1 FROM people p
                     WHERE p.company_id = c.id
-                    AND (p.name LIKE ? OR p.emails LIKE ?)
+                    AND (p.name LIKE %s OR p.emails LIKE %s)
                 )
             )
         """
         params += [f"%{search}%"] * 5
 
     if industries:
-        placeholders = ",".join("?" * len(industries))
+        placeholders = ",".join("%s" * len(industries))
         sql += f" AND e.primary_industry IN ({placeholders})"
         params += industries
 
     if types:
-        type_conditions = " OR ".join(["e.company_type LIKE ?" for _ in types])
+        type_conditions = " OR ".join(["e.company_type LIKE %s" for _ in types])
         sql += f" AND ({type_conditions})"
         params += [f"%{t}%" for t in types]
 
-    sql += " GROUP BY c.id"
+    sql += " GROUP BY c.id, c.name, c.addresses, c.phones, c.websites, c.company_info, c.source_folder, c.notes, e.primary_industry, e.sub_industry, e.company_type, e.products, e.markets, e.domain"
 
     if categories:
-        placeholders = ",".join("?" * len(categories))
+        placeholders = ",".join("%s" * len(categories))
         sql = f"""
             SELECT sub.id, sub.name, sub.addresses, sub.phones, sub.websites,
                    sub.company_info, sub.source_folder, sub.primary_industry,
@@ -130,7 +141,7 @@ def get_companies_filtered(categories=None, industries=None, types=None, search=
 
     cur.execute(sql, params)
     rows = cur.fetchall()
-    conn.close()
+    close_db(conn)
     return rows
 
 
@@ -140,10 +151,10 @@ def get_all_categories():
     try:
         cur.execute("SELECT DISTINCT category FROM company_categories ORDER BY category")
         return [r["category"] for r in cur.fetchall()]
-    except sqlite3.OperationalError:
+    except Exception:
         return []
     finally:
-        conn.close()
+        close_db(conn)
 
 
 def get_all_industries():
@@ -152,10 +163,10 @@ def get_all_industries():
     try:
         cur.execute("SELECT DISTINCT primary_industry FROM enrichment WHERE primary_industry IS NOT NULL ORDER BY primary_industry")
         return [r["primary_industry"] for r in cur.fetchall()]
-    except sqlite3.OperationalError:
+    except Exception:
         return []
     finally:
-        conn.close()
+        close_db(conn)
 
 
 def get_all_types():
@@ -165,10 +176,10 @@ def get_all_types():
     try:
         cur.execute("SELECT company_type FROM enrichment WHERE company_type IS NOT NULL")
         rows = cur.fetchall()
-    except sqlite3.OperationalError:
+    except Exception:
         return []
     finally:
-        conn.close()
+        close_db(conn)
 
     seen = set()
     for row in rows:
@@ -200,18 +211,18 @@ def get_stats():
         stats["categories"] = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) as n FROM flagged WHERE status = 'active'")
         stats["flagged"] = cur.fetchone()["n"]
-    except sqlite3.OperationalError:
+    except Exception:
         stats = {"companies": 0, "people": 0, "enriched": 0, "categories": 0, "flagged": 0}
-    conn.close()
+    close_db(conn)
     return stats
 
 
 def get_people_for_company(company_id):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM people WHERE company_id = ?", (company_id,))
+    cur.execute("SELECT * FROM people WHERE company_id = %s", (company_id,))
     rows = cur.fetchall()
-    conn.close()
+    close_db(conn)
     return rows
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -230,7 +241,7 @@ def get_people_for_company(company_id):
 
 # # def get_taiga_project_id(token):
 # #     res = requests.get(
-# #         f"{TAIGA_API_URL}/projects/by_slug?slug={TAIGA_PROJECT_SLUG}",
+# #         f"{TAIGA_API_URL}/projects/by_slug%sslug={TAIGA_PROJECT_SLUG}",
 # #         headers={"Authorization": f"Bearer {token}"}
 # #     )
 # #     return res.json().get("id")
@@ -272,10 +283,10 @@ def get_people_for_company(company_id):
 # def get_or_create_taiga_project(company_id, company_name, token):
     conn = get_db()
     row = conn.execute(
-        "SELECT taiga_project_id, taiga_project_slug FROM companies WHERE id = ?",
+        "SELECT taiga_project_id, taiga_project_slug FROM companies WHERE id = %s",
         (company_id,)
     ).fetchone()
-    conn.close()
+    close_db(conn)
 
     if row and row["taiga_project_id"] and row["taiga_project_slug"]:
         return row["taiga_project_id"], row["taiga_project_slug"], None
@@ -300,11 +311,11 @@ def get_people_for_company(company_id):
 
     conn = get_db()
     conn.execute(
-        "UPDATE companies SET taiga_project_id = ?, taiga_project_slug = ? WHERE id = ?",
+        "UPDATE companies SET taiga_project_id = %s, taiga_project_slug = %s WHERE id = %s",
         (project_id, project_slug, company_id)
     )
     conn.commit()
-    conn.close()
+    close_db(conn)
 
     return project_id, project_slug, None
 
@@ -471,9 +482,10 @@ def api_stats():
 def save_notes(company_id):
     notes = (request.json or {}).get("notes", "")
     conn = get_db()
-    conn.execute("UPDATE companies SET notes = ? WHERE id = ?", (notes, company_id))
+    cursor = conn.cursor()
+    cursor.execute("UPDATE companies SET notes = %s WHERE id = %s", (notes, company_id))
     conn.commit()
-    conn.close()
+    close_db(conn)
     return jsonify({"ok": True})
 
 @app.route("/api/company/<int:company_id>/domain", methods=["POST"])
@@ -483,11 +495,12 @@ def save_domain(company_id):
         return jsonify({"error": "no domain provided"}), 400
     domain = domain.replace("https://", "").replace("http://", "").rstrip("/")
     conn = get_db()
-    conn.execute("UPDATE companies SET websites = ? WHERE id = ?",
+    cursor = conn.cursor()
+    cursor.execute("UPDATE companies SET websites = %s WHERE id = %s",
                  (json.dumps([domain]), company_id))
     conn.commit()
-    conn.close()
-    resolve_flag(DB_PATH, company_id, "no_domain", "resolved")
+    close_db(conn)
+    resolve_flag(company_id, "no_domain", "resolved")
     return jsonify({"ok": True})
 
 @app.route("/api/transcript", methods=["POST"])
@@ -527,8 +540,11 @@ Transcript:
     gpt_company = result.get("company")
     if gpt_company:
         conn = get_db()
-        rows = conn.execute("SELECT id, name FROM companies").fetchall()
-        conn.close()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name FROM companies")
+        rows = cursor.fetchall()
+        conn.commit()
+        close_db(conn)
         gpt_lower = gpt_company.lower()
         best_match = None
         best_score = 0
@@ -558,10 +574,11 @@ def save_tasks():
     transcript = data.get("transcript", "")
 
     conn = get_db()
+    cursor = conn.cursor()
     for task in tasks:
-        conn.execute("""
+        cursor.execute("""
             INSERT INTO tasks (company_id, title, description, assignee, due_date, status, source_transcript, created_at)
-            VALUES (?, ?, ?, ?, ?, 'To Do', ?, ?)
+            VALUES (%s, %s, %s, %s, %s, 'To Do', %s, %s)
         """, (
             company_id,
             task.get("title"),
@@ -572,15 +589,16 @@ def save_tasks():
             datetime.now().isoformat()
         ))
     conn.commit()
-    conn.close()
+    close_db(conn)
     return jsonify({"ok": True, "saved": len(tasks)})
 
 @app.route("/api/tasks/<int:task_id>", methods=["DELETE"])
 def delete_task(task_id):
     conn = get_db()
-    conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
     conn.commit()
-    conn.close()
+    close_db(conn)
     return jsonify({"ok": True})
 
 
@@ -589,6 +607,7 @@ def get_tasks():
     company_id = request.args.get("company_id")
     status = request.args.get("status")
     conn = get_db()
+    cursor = conn.cursor()
     sql = """
         SELECT t.*, c.name as company_name
         FROM tasks t
@@ -597,14 +616,15 @@ def get_tasks():
     """
     params = []
     if company_id:
-        sql += " AND t.company_id = ?"
+        sql += " AND t.company_id = %s"
         params.append(company_id)
     if status:
-        sql += " AND t.status = ?"
+        sql += " AND t.status = %s"
         params.append(status)
     sql += " ORDER BY t.created_at DESC"
-    rows = conn.execute(sql, params).fetchall()
-    conn.close()
+    cursor.execute(sql, params)
+    rows = cursor.fetchall()
+    close_db(conn)
     return jsonify([dict(r) for r in rows])
 
 
@@ -615,20 +635,23 @@ def update_task(task_id):
     updates = {k: v for k, v in data.items() if k in allowed}
     if not updates:
         return jsonify({"error": "nothing to update"}), 400
-    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    set_clause = ", ".join(f"{k} = %s" for k in updates)
     values = list(updates.values()) + [task_id]
     conn = get_db()
-    conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", values)
+    cursor = conn.cursor()
+    cursor.execute(f"UPDATE tasks SET {set_clause} WHERE id = %s", values)
     conn.commit()
-    conn.close()
+    close_db(conn)
     return jsonify({"ok": True})
 
 
 @app.route("/api/companies/list")
 def api_companies_list():
     conn = get_db()
-    rows = conn.execute("SELECT id, name FROM companies ORDER BY name").fetchall()
-    conn.close()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name FROM companies ORDER BY name")
+    rows = cursor.fetchall()
+    close_db(conn)
     return jsonify([dict(r) for r in rows])
 
 @app.route("/api/enrich/single", methods=["POST"])
@@ -660,9 +683,9 @@ def enrich_single():
 #         SELECT t.*, c.name as company_name
 #         FROM tasks t
 #         LEFT JOIN companies c ON c.id = t.company_id
-#         WHERE t.id = ?
+#         WHERE t.id = %s
 #     """, (task_id,)).fetchone()
-#     conn.close()
+#     close_db(conn)
 
 #     if not task:
 #         return jsonify({"error": "task not found"}), 404
@@ -696,9 +719,9 @@ def enrich_single():
 #         SELECT t.*, c.name as company_name
 #         FROM tasks t
 #         LEFT JOIN companies c ON c.id = t.company_id
-#         WHERE t.id = ?
+#         WHERE t.id = %s
 #     """, (task_id,)).fetchone()
-#     conn.close()
+#     close_db(conn)
 
 #     if not task:
 #         return jsonify({"error": "task not found"}), 404
@@ -733,13 +756,15 @@ def enrich_single():
 @app.route("/api/tasks/<int:task_id>/push-zoho", methods=["POST"])
 def push_to_zoho(task_id):
     conn = get_db()
-    task = conn.execute("""
+    cursor = conn.cursor()
+    cursor.execute("""
         SELECT t.*, c.name as company_name
         FROM tasks t
         LEFT JOIN companies c ON c.id = t.company_id
-        WHERE t.id = ?
-    """, (task_id,)).fetchone()
-    conn.close()
+        WHERE t.id = %s
+    """, (task_id,))
+    task = cursor.fetchone()
+    close_db(conn)
 
     if not task:
         return jsonify({"error": "task not found"}), 404
@@ -806,9 +831,9 @@ def mobile_save():
         return jsonify({"error": "no data provided"}), 400
 
     import db_addition as newdb
-    newdb.init_db(DB_PATH)
-    company_id = newdb.save_company(DB_PATH, data, "mobile")
-    newdb.save_people(DB_PATH, company_id, data)
+    newdb.init_db()
+    company_id = newdb.save_company(data, "mobile")
+    newdb.save_people(company_id, data)
 
     return jsonify({
         "ok": True,
@@ -843,7 +868,7 @@ CANONICAL_CATEGORIES = [
 
 @app.route("/api/flagged")
 def api_flagged():
-    rows = get_flagged(DB_PATH)
+    rows = get_flagged()
     result = []
     for r in rows:
         products = []
@@ -874,11 +899,13 @@ def api_flag_categories():
 @app.route("/api/flagged/<int:flag_id>/dismiss", methods=["POST"])
 def api_dismiss_flag(flag_id):
     conn = get_db()
-    row = conn.execute("SELECT company_id, reason FROM flagged WHERE id = ?", (flag_id,)).fetchone()
-    conn.close()
+    cursor = conn.cursor()
+    cursor.execute("SELECT company_id, reason FROM flagged WHERE id = %s", (flag_id,))
+    row = cursor.fetchone()
+    close_db(conn)
     if not row:
         return jsonify({"error": "flag not found"}), 404
-    resolve_flag(DB_PATH, row["company_id"], row["reason"], "dismissed")
+    resolve_flag(row["company_id"], row["reason"], "dismissed")
     return jsonify({"ok": True})
 
 
@@ -890,26 +917,30 @@ def api_assign_flag(flag_id):
         return jsonify({"error": "no categories provided"}), 400
 
     conn = get_db()
-    row = conn.execute("SELECT company_id, reason FROM flagged WHERE id = ?", (flag_id,)).fetchone()
-    conn.close()
+    cursor = conn.cursor()
+    cursor.execute("SELECT company_id, reason FROM flagged WHERE id = %s", (flag_id,))
+    row = cursor.fetchone()
+    close_db(conn)
     if not row:
         return jsonify({"error": "flag not found"}), 404
 
-    save_categories(DB_PATH, row["company_id"], categories)
-    resolve_flag(DB_PATH, row["company_id"], row["reason"], "resolved")
+    save_categories(row["company_id"], categories)
+    resolve_flag(row["company_id"], row["reason"], "resolved")
     return jsonify({"ok": True})
 
 
 @app.route("/api/flagged/<int:flag_id>/gpt", methods=["POST"])
 def api_gpt_suggest(flag_id):
     conn = get_db()
-    row = conn.execute("""
+    cursor = conn.cursor()
+    cursor.execute("""
         SELECT f.company_id, f.reason, e.products
         FROM flagged f
         LEFT JOIN enrichment e ON e.contact_id = f.company_id
-        WHERE f.id = ?
-    """, (flag_id,)).fetchone()
-    conn.close()
+        WHERE f.id = %s
+    """, (flag_id,))
+    row = cursor.fetchone()
+    close_db(conn)
     if not row:
         return jsonify({"error": "flag not found"}), 404
 
@@ -957,7 +988,7 @@ Return a JSON array of the category names that best match this company. Only inc
 
 @app.route("/api/flagged/gpt-bulk", methods=["POST"])
 def api_gpt_bulk():
-    rows = get_flagged(DB_PATH)
+    rows = get_flagged()
     # only process no_category_match flags since others don't have products to classify
     to_process = [r for r in rows if r["reason"] == "no_category_match"]
 
@@ -990,13 +1021,13 @@ def api_gpt_bulk():
                     "role": "user",
                     "content": f"""You are classifying a company into product categories for a B2B heavy equipment marketplace serving MENA and Africa.
 
-The company's products/services are:
-{json.dumps(products, indent=2)}
+                    The company's products/services are:
+                    {json.dumps(products, indent=2)}
 
-The available categories are:
-{json.dumps(CANONICAL_CATEGORIES, indent=2)}
+                    The available categories are:
+                    {json.dumps(CANONICAL_CATEGORIES, indent=2)}
 
-Return a JSON array of the category names that best match this company. Only include categories that are a genuine match. Return only JSON, no explanation."""
+                    Return a JSON array of the category names that best match this company. Only include categories that are a genuine match. Return only JSON, no explanation."""
                 }],
             )
             raw = response.choices[0].message.content
@@ -1007,8 +1038,8 @@ Return a JSON array of the category names that best match this company. Only inc
             suggested = [c for c in suggested if c in CANONICAL_CATEGORIES]
 
             if suggested:
-                save_categories(DB_PATH, row["company_id"], suggested)
-                resolve_flag(DB_PATH, row["company_id"], "no_category_match", "resolved")
+                save_categories(row["company_id"], suggested)
+                resolve_flag(row["company_id"], "no_category_match", "resolved")
                 results["resolved"] += 1
             else:
                 results["skipped"] += 1
@@ -1016,6 +1047,20 @@ Return a JSON array of the category names that best match this company. Only inc
             results["failed"] += 1
 
     return jsonify(results)
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Person notes
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/people/<int:person_id>/notes", methods=["POST"])
+def save_person_notes(person_id):
+    notes = (request.json or {}).get("notes", "")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE people SET notes = %s WHERE id = %s", (notes, person_id))
+    conn.commit()
+    close_db(conn)
+    return jsonify({"ok": True})
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Pipeline execution + SSE streaming
@@ -1061,11 +1106,11 @@ def start_pipeline():
         folder = data.get("folder", "")
         if not folder:
             return jsonify({"error": "folder required"}), 400
-        cmd = ["python", "script.py", folder]
+        cmd = [sys.executable, "script.py", folder]
     elif pipeline == "enrich":
-        cmd = ["python", "enrich2.py"]
+        cmd = [sys.executable, "enrich2.py"]
     elif pipeline == "normalize":
-        cmd = ["python", "normalizer.py", "--db", DB_PATH]
+        cmd = [sys.executable, "normalizer.py"]
     else:
         return jsonify({"error": "unknown pipeline"}), 400
 

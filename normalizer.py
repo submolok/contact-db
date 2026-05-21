@@ -12,9 +12,13 @@ Usage:
 import argparse
 import json
 import re
-import sqlite3
+import psycopg2 # sqlite3
+from psycopg2 import extras
 from collections import defaultdict
 from db_addition import save_categories, save_flag
+from dotenv import load_dotenv
+import os
+load_dotenv()
 
 
 # ---------------------------------------------------------------------------
@@ -196,9 +200,9 @@ def classify_products(products_json: str | None) -> list[str]:
 
 # Runs enrichment
 
-def run(db_path: str, dry_run: bool = False):
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+def run(dry_run: bool = False):
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    conn.cursor_factory = extras.RealDictCursor
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -230,9 +234,9 @@ def run(db_path: str, dry_run: bool = False):
         if dry_run:
             print(f"company_id={company_id:>4}  →  {categories or '(no match)'}")
         else:
-            save_categories(db_path, company_id, categories)
+            save_categories(company_id, categories)
             if not categories:
-                save_flag(db_path, company_id, "no_category_match")
+                save_flag(company_id, "no_category_match")
 
     print("\n" + "=" * 50)
     print(f"  Total enrichment rows : {stats['total']}")
@@ -252,13 +256,12 @@ def run(db_path: str, dry_run: bool = False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Classify enrichment products into standardized categories."
+    description="Classify enrichment products into standardized categories."
     )
-    parser.add_argument("--db", required=True, help="Path to the SQLite database file")
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print classifications without writing to the database",
     )
     args = parser.parse_args()
-    run(db_path=args.db, dry_run=args.dry_run)
+    run(dry_run=args.dry_run)

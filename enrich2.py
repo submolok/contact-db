@@ -1,5 +1,6 @@
 import json
-import sqlite3
+import psycopg2         # replace with sqlite3 if needed
+from psycopg2 import extras
 from firecrawl import Firecrawl
 from openai import OpenAI
 from pathlib import Path
@@ -12,7 +13,7 @@ import os
 
 load_dotenv()
 
-DB_PATH = str(Path(__file__).parent / "contacts.db")
+# DB_PATH = str(Path(__file__).parent / "contacts.db")
 
 # TODO: move these to environment variables or a config file in production code
 
@@ -29,9 +30,9 @@ def log_raw(run_id: str, label: str, content: str):
         f.write("\n")
 
 
-def get_companies(db_path: str) -> list:
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+def get_companies() -> list:
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    conn.cursor_factory = extras.RealDictCursor
     cursor = conn.cursor()
     cursor.execute("""
         SELECT c.id, c.name, c.websites, MIN(p.emails) as emails
@@ -106,13 +107,13 @@ def enrich_company(website_text: str, run_id: str) -> dict:
         return {}
 
 
-def save_enrichment(db_path: str, contact_id: int, domain: str | None, data: dict):
-    conn = sqlite3.connect(db_path)
+def save_enrichment(contact_id: int, domain: str | None, data: dict):
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
     cursor = conn.cursor()
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS enrichment (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY ,
             contact_id INTEGER,
             domain TEXT,
             primary_industry TEXT,
@@ -126,7 +127,7 @@ def save_enrichment(db_path: str, contact_id: int, domain: str | None, data: dic
 
     cursor.execute("""
         INSERT INTO enrichment (contact_id, domain, primary_industry, sub_industry, company_type, products, markets)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
     """, (
         contact_id,
         domain,
@@ -140,19 +141,20 @@ def save_enrichment(db_path: str, contact_id: int, domain: str | None, data: dic
     conn.commit()
     conn.close()
 
-def is_already_enriched(db_path: str, contact_id: int) -> bool:
-    conn = sqlite3.connect(db_path)
+def is_already_enriched(contact_id: int) -> bool:
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    conn.cursor_factory = extras.RealDictCursor
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id FROM enrichment WHERE contact_id = ?", (contact_id,))
+        cursor.execute("SELECT id FROM enrichment WHERE contact_id = %s", (contact_id,))
         return cursor.fetchone() is not None
-    except sqlite3.OperationalError:
+    except Exception:
         return False
     finally:
         conn.close()
 
-def enrich_all(db_path: str, single_id: int = None):
-    companies = get_companies(db_path)
+def enrich_all(single_id: int = None):
+    companies = get_companies()
     if single_id:
         companies = [r for r in companies if r["id"] == single_id]
     print(f"Found {len(companies)} companies to enrich.\n")
@@ -162,7 +164,7 @@ def enrich_all(db_path: str, single_id: int = None):
         contact_id = row["id"]
         company_name = row["name"]
 
-        if is_already_enriched(db_path, contact_id):
+        if is_already_enriched(contact_id):
             print(f"[{contact_id}] {company_name} — already enriched, skipping.")
             continue
 
@@ -186,8 +188,8 @@ def enrich_all(db_path: str, single_id: int = None):
         if not domain or domain.lower() == "null":
             log_raw(f"enrich_{run_id}", f"no_domain_{company_name}", f"Company ID {contact_id} — no domain or email found")
             print("  No domain found, saving empty entry.\n")
-            save_enrichment(db_path, contact_id, None, {})
-            save_flag(db_path, contact_id, "no_domain")
+            save_enrichment(contact_id, None, {})
+            save_flag(contact_id, "no_domain")
             continue
 
         print(f"  Domain: {domain}")
@@ -195,17 +197,17 @@ def enrich_all(db_path: str, single_id: int = None):
         website_text = scrape_website(domain, run_id)
         if not website_text:
             print("  Could not scrape website, saving empty entry.\n")
-            save_enrichment(db_path, contact_id, domain, {})
-            save_flag(db_path, contact_id, "scrape_failed")
+            save_enrichment(contact_id, domain, {})
+            save_flag(contact_id, "scrape_failed")
             continue
 
         print("  Scraped. Enriching with GPT...")
         enrichment = enrich_company(website_text, run_id)
         if not enrichment:
             log_raw(f"enrich_{run_id}", f"enrich_parse_failed_{domain}", website_text[:500])
-        save_enrichment(db_path, contact_id, domain, enrichment)
+        save_enrichment(contact_id, domain, enrichment)
         if not enrichment:
-            save_flag(db_path, contact_id, "enrichment_failed")
+            save_flag(contact_id, "enrichment_failed")
         print("  Done.\n")
 
     print("Enrichment complete.")
@@ -219,17 +221,19 @@ if __name__ == "__main__":
 
     if args.single:
         # single enrichment
-        companies = [r for r in get_companies(DB_PATH) if r["id"] == args.single]
+        companies = [r for r in get_companies() if r["id"] == args.single]
         if not companies:
             print(f"Company ID {args.single} not found.")
         else:
             run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
             # re-use existing enrich logic but force re-enrichment
-            conn = sqlite3.connect(DB_PATH)
-            conn.execute("DELETE FROM enrichment WHERE contact_id = ?", (args.single,))
+            conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+            conn.cursor_factory = extras.RealDictCursor
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM enrichment WHERE contact_id = %s", (args.single,))
             conn.commit()
             conn.close()
-            enrich_all(DB_PATH, single_id=args.single)
+            enrich_all(single_id=args.single)
     else:
         # bulk enrichment
-        enrich_all(DB_PATH)
+        enrich_all()

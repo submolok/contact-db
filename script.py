@@ -11,7 +11,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
 
-DB_PATH = str(Path(__file__).parent / "contacts.db")
+# DB_PATH = str(Path(__file__).parent / "contacts.db")
 
 
 # TODO: move these to environment variables or a config file in production code
@@ -105,7 +105,7 @@ def log_raw(run_id: str, label: str, content: str):
 
 def process_folder(folder_path: str):
     folder = Path(folder_path)
-    newdb.init_db(DB_PATH)
+    newdb.init_db()
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # group images by their immediate parent folder (company folder)
@@ -125,8 +125,8 @@ def process_folder(folder_path: str):
             raw_json = read_business_card(images)
             log_raw(run_id, f"ocr_{company_folder.name}", raw_json)
             data = json.loads(raw_json)
-            company_id = newdb.save_company(DB_PATH, data, str(company_folder))
-            newdb.save_people(DB_PATH, company_id, data)
+            company_id = newdb.save_company(data, str(company_folder))
+            newdb.save_people(company_id, data)
             print(f"  Saved company + {len(data.get('people', []))} people.\n")
         except Exception as e:
             print(f"  ERROR: {e}\n")

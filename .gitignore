@@ -22,3 +22,4 @@ sql_script.py
 templates/venv/
 templates/old2index.html
 templates/oldindex.html
+migrate.py
