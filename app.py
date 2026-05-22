@@ -833,11 +833,12 @@ def mobile_save():
     import db_addition as newdb
     newdb.init_db()
     company_id = newdb.save_company(data, "mobile")
-    newdb.save_people(company_id, data)
+    people_ids = newdb.save_people(company_id, data)
 
     return jsonify({
         "ok": True,
         "company_id": company_id,
+        "people_ids": people_ids,
         "people_saved": len(data.get("people", []))
     })
 

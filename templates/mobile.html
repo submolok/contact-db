@@ -518,6 +518,83 @@ input[type=file] { display: none; }
   border-top: 1px solid var(--border);
   margin: 16px 0;
 }
+
+/* ── VOICE NOTE ── */
+.voice-note-wrap {
+  margin-top: 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  padding: 10px;
+}
+.voice-note-label {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 6px;
+}
+.voice-note-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.btn-mic {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  font-size: 1.1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-mic.recording {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+  animation: pulse 1s ease-in-out infinite;
+}
+.voice-note-textarea {
+  width: 100%;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  padding: 8px;
+  resize: vertical;
+  min-height: 70px;
+  outline: none;
+  line-height: 1.4;
+}
+.voice-note-textarea:focus { border-color: var(--amber-dim); }
+.btn-save-note {
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px;
+  background: none;
+  border: 1px solid var(--amber-dim);
+  color: var(--amber);
+  border-radius: 3px;
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-save-note:hover { background: rgba(245,166,35,0.1); }
+.btn-save-note:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -574,6 +651,7 @@ input[type=file] { display: none; }
 
   <!-- action buttons -->
   <button class="btn-primary" id="btn-scan" onclick="scanCard()" disabled>⚡ Extract Details</button>
+  <button class="btn-secondary" id="btn-test" onclick="useTestData()">🧪 Use Test Data</button>
   <button class="btn-secondary" id="btn-reset" onclick="resetScan()" style="display:none">↺ Scan Another</button>
 
   <!-- result -->
@@ -801,12 +879,21 @@ function renderResult(data) {
 
   // people
   const container = document.getElementById('people-cards');
-  container.innerHTML = people.map(p => `
+  container.innerHTML = people.map((p, i) => `
     <div class="person-card">
       <div class="person-name">${esc(p.name || '—')}</div>
       <div class="person-role">${esc(p.role || '')}</div>
       ${(p.emails||[]).map(e => `<div class="person-contact">✉ ${esc(e)}</div>`).join('')}
       ${(p.phones||[]).map(ph => `<div class="person-contact">✆ ${esc(ph)}</div>`).join('')}
+      <div class="voice-note-wrap">
+        <div class="voice-note-label">Voice Note</div>
+        <div class="voice-note-controls">
+          <button class="btn-mic" id="mic-${i}" onclick="toggleMic(${i})">🎙</button>
+          <span style="font-family:var(--mono);font-size:0.62rem;color:var(--text3)" id="mic-status-${i}">Tap to record</span>
+        </div>
+        <textarea class="voice-note-textarea" id="note-${i}" placeholder="Note will appear here, or type manually…"></textarea>
+        <button class="btn-save-note" onclick="savePersonNote(${i})" id="save-note-${i}">💾 Save Note</button>
+      </div>
     </div>
   `).join('');
 }
@@ -836,6 +923,24 @@ async function saveCard() {
     });
     const data = await res.json();
     if (!data.ok) throw new Error('Save failed');
+
+    // store person IDs for note saving
+    extractedData._savedPeopleIds = data.people_ids || [];
+
+    // save any notes that were already typed
+    const people = extractedData.people || [];
+    for (let i = 0; i < people.length; i++) {
+      const note = document.getElementById(`note-${i}`)?.value.trim();
+      const personId = extractedData._savedPeopleIds[i];
+      if (note && personId) {
+        await fetch(`/api/people/${personId}/notes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: note })
+        });
+      }
+    }
+
     btn.textContent = '✓ Saved';
     btn.style.background = 'var(--green)';
   } catch(e) {
@@ -963,6 +1068,124 @@ async function saveManualTask() {
     dot.className = 'status-dot error';
     text.textContent = 'Error: ' + e.message;
   }
+}
+
+// ── VOICE NOTES ───────────────────────────────────────────────────────────
+const recognizers = {};
+
+function toggleMic(index) {
+  if (recognizers[index]) {
+    recognizers[index].stop();
+    return;
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert('Speech recognition is not supported in this browser. Try Chrome on Android.');
+    return;
+  }
+
+  const rec = new SpeechRecognition();
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.lang = 'en-US';
+
+  const btn = document.getElementById(`mic-${index}`);
+  const status = document.getElementById(`mic-status-${index}`);
+  const textarea = document.getElementById(`note-${index}`);
+  const existingText = textarea.value;
+
+  rec.onstart = () => {
+    recognizers[index] = rec;
+    btn.classList.add('recording');
+    btn.textContent = '⏹';
+    status.textContent = 'Recording…';
+  };
+
+  rec.onresult = (e) => {
+    let interim = '';
+    let final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) {
+        final += e.results[i][0].transcript;
+      } else {
+        interim += e.results[i][0].transcript;
+      }
+    }
+    textarea.value = existingText + final + interim;
+  };
+
+  rec.onend = () => {
+    delete recognizers[index];
+    btn.classList.remove('recording');
+    btn.textContent = '🎙';
+    status.textContent = 'Tap to record';
+  };
+
+  rec.onerror = (e) => {
+    delete recognizers[index];
+    btn.classList.remove('recording');
+    btn.textContent = '🎙';
+    status.textContent = `Error: ${e.error}`;
+  };
+
+  rec.start();
+}
+
+async function savePersonNote(index) {
+  const note = document.getElementById(`note-${index}`).value.trim();
+  if (!note) return;
+
+  const btn = document.getElementById(`save-note-${index}`);
+  btn.disabled = true;
+  btn.textContent = '⟳ Saving…';
+
+  // we need the person_id from the saved card — only available after saveCard()
+  const personId = extractedData?._savedPeopleIds?.[index];
+  if (!personId) {
+    // note will be saved when card is saved
+    btn.textContent = '✓ Will save with card';
+    return;
+  }
+
+  try {
+    await fetch(`/api/people/${personId}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: note })
+    });
+    btn.textContent = '✓ Saved';
+    btn.style.borderColor = 'var(--green)';
+    btn.style.color = 'var(--green)';
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '💾 Save Note';
+  }
+}
+
+function useTestData() {
+  extractedData = {
+    company: {
+      name: "Test Company Ltd.",
+      addresses: ["123 Test Street, Bengaluru - 560001"],
+      phones: ["+91 80 1234 5678"],
+      websites: ["www.testcompany.com"],
+      company_info: "Test company for development purposes."
+    },
+    people: [
+      {
+        name: "Test Person",
+        role: "Test Manager",
+        emails: ["test@testcompany.com"],
+        phones: ["+91 98765 43210"]
+      }
+    ]
+  };
+  renderResult(extractedData);
+  setStatus('success', 'Test data loaded');
+  document.getElementById('scan-result').style.display = 'block';
+  document.getElementById('btn-scan').style.display = 'none';
+  document.getElementById('btn-reset').style.display = 'block';
 }
 
 // ── UTILS ─────────────────────────────────────────────────────────────────

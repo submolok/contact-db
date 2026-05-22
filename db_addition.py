@@ -18,7 +18,7 @@ def init_db():
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS companies (
-            id INTEGER PRIMARY KEY SERIAL,
+            id SERIAL PRIMARY KEY,
             name TEXT,
             addresses TEXT,
             phones TEXT,
@@ -243,12 +243,13 @@ def save_company(data: dict, source_folder: str) -> int | None:
     return company_id
 
 
-# Saves people to DB (Also updates)
+# Saves people to DB (or updates existing)
 
 def save_people(company_id: int | None, data: dict):
     conn = get_conn()
     # conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
+    ids =[]
 
     for person in data.get("people", []):
         name = (person.get("name") or "").strip()
@@ -286,8 +287,19 @@ def save_people(company_id: int | None, data: dict):
                 normalize(person.get("emails")),
             ))
 
+        if existing:
+            ids.append(existing["id"])
+        else:
+            cursor.execute("SELECT id FROM people WHERE company_id = %s AND TRIM(LOWER(name)) = %s",
+                          (company_id, name.lower()))
+            row = cursor.fetchone()
+            if row:
+                ids.append(row["id"])
+
+
     conn.commit()
     conn.close()
+    return ids
 
 
 # Assign categories
