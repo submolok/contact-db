@@ -6,9 +6,15 @@
 <title>YantraLive — Login</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    document.body.className = localStorage.getItem('theme') || 'light';
+  });
+</script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
+  body.dark {
   --bg:       #0a0b0d;
   --bg2:      #111318;
   --bg3:      #181c23;
@@ -19,9 +25,31 @@
   --amber-dim:#7a5210;
   --red:      #e05a4e;
   --green:    #4caf74;
+  --blue:     #4a8fe8;
   --text:     #dde2ec;
   --text2:    #8b93a6;
   --text3:    #5a6070;
+  --terminal-bg: #2a313f;
+  --terminal-text: #8bc34a;
+  }
+  body.light {
+  --bg:       #ffffff;
+  --bg2:      #f4f5f7;
+  --bg3:      #e8eaed;
+  --border:   #d1d5db;
+  --border2:  #b0b7c3;
+  --amber:    #f5a623;
+  --amber2:   #ffbe4f;
+  --amber-dim:#7a5210;
+  --red:      #e05a4e;
+  --green:    #4caf74;
+  --blue:     #4a8fe8;
+  --text:     #111318;
+  --text2:    #3a4050;
+  --text3:    #6b7280;
+  --terminal-bg: #1e2030;
+  --terminal-text: #a6da95;
+}
   --mono:     'Space Mono', monospace;
   --sans:     'Barlow', sans-serif;
   --cond:     'Barlow Condensed', sans-serif;
@@ -144,7 +172,6 @@ html, body {
 </style>
 </head>
 <body>
-
 <div class="login-wrap">
   <div class="login-logo">
     <div class="logo-mark"></div>

@@ -45,6 +45,9 @@ ZOHO_ACCOUNTS_URL = os.getenv("ZOHO_ACCOUNTS_URL", "https://accounts.zoho.in")
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-change-in-production")
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # DB_PATH = os.environ.get("DB_PATH", str(Path(__file__).parent / "contacts.db"))
 
@@ -1221,6 +1224,97 @@ def save_person_notes(person_id):
     conn.commit()
     close_db(conn)
     return jsonify({"ok": True})
+
+@app.route("/api/people/search")
+@login_required
+def api_people_search():
+    q = request.args.get("q", "").strip()
+    field = request.args.get("field", "notes")
+    if not q:
+        return jsonify([])
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    if field == "notes":
+        cursor.execute("""
+            SELECT DISTINCT p.id, p.name, p.role, p.phones, p.emails,
+                   c.name as company_name,
+                   pn.note as matched_note, pn.created_at, u.username
+            FROM people p
+            JOIN companies c ON c.id = p.company_id
+            JOIN person_notes pn ON pn.person_id = p.id
+            JOIN users u ON u.id = pn.user_id
+            WHERE pn.note ILIKE %s
+            ORDER BY p.name
+        """, (f"%{q}%",))
+    elif field == "people":
+        cursor.execute("""
+            SELECT p.id, p.name, p.role, p.phones, p.emails,
+                   c.name as company_name,
+                   NULL as matched_note, NULL as created_at, NULL as username
+            FROM people p
+            JOIN companies c ON c.id = p.company_id
+            WHERE p.name ILIKE %s
+            ORDER BY p.name
+        """, (f"%{q}%",))
+    elif field == "products":
+        cursor.execute("""
+            SELECT DISTINCT p.id, p.name, p.role, p.phones, p.emails,
+                   c.name as company_name,
+                   e.products as matched_note, NULL as created_at, NULL as username
+            FROM people p
+            JOIN companies c ON c.id = p.company_id
+            JOIN enrichment e ON e.contact_id = c.id
+            WHERE e.products ILIKE %s
+            ORDER BY p.name
+        """, (f"%{q}%",))
+
+    rows = cursor.fetchall()
+    close_db(conn)
+
+    def safe_json(v):
+        if not v or v == "null": return []
+        try:
+            parsed = json.loads(v)
+            return [i for i in parsed if i] if isinstance(parsed, list) else [parsed]
+        except: return [v]
+
+    return jsonify([{
+        "id": r["id"],
+        "name": r["name"],
+        "role": r["role"],
+        "phones": safe_json(r["phones"]),
+        "emails": safe_json(r["emails"]),
+        "company_name": r["company_name"],
+        "matched_note": r["matched_note"],
+        "created_at": r["created_at"],
+        "username": r["username"]
+    } for r in rows])
+
+
+@app.route("/api/notes/<int:note_id>", methods=["PATCH"])
+@login_required
+def edit_note(note_id):
+    note = (request.json or {}).get("note", "").strip()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM person_notes WHERE id = %s", (note_id,))
+    row = cursor.fetchone()
+    if not row:
+        close_db(conn)
+        return jsonify({"error": "note not found"}), 404
+    if row["user_id"] != session["user_id"]:
+        close_db(conn)
+        return jsonify({"error": "not your note"}), 403
+    if not note:
+        # empty note = delete
+        cursor.execute("DELETE FROM person_notes WHERE id = %s", (note_id,))
+    else:
+        cursor.execute("UPDATE person_notes SET note = %s WHERE id = %s", (note, note_id))
+    conn.commit()
+    close_db(conn)
+    return jsonify({"ok": True, "deleted": not note})
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Pipeline execution + SSE streaming
