@@ -280,6 +280,8 @@ input, select, textarea { font-family: inherit; }
   color: var(--amber);
 }
 
+.hidden { display: none !important; }
+
 /* main content */
 .db-main {
   flex: 1;
@@ -1159,6 +1161,8 @@ tr.expanded td { background: rgba(245,166,35,0.04); }
         <div class="lbl">Flagged</div>
       </div>
       <button onclick="toggleTheme()" id="theme-btn" style="background: none; border: 1px solid var(--border2); color: var(--text2); padding: 4px 12px; border-radius: 2px; font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.1em;">☀ LIGHT</button>
+      <button onclick="logout()" style="background:none;border:1px solid var(--border2);color:var(--text2);padding:4px 12px;border-radius:2px;font-family:var(--mono);font-size:0.65rem;letter-spacing:0.1em;">⎋ LOGOUT</button>
+      <a href="/admin" id="admin-link" class="hidden" style="background:none;border:1px solid var(--border2);color:var(--text2);padding:4px 12px;border-radius:2px;font-family:var(--mono);font-size:0.65rem;letter-spacing:0.1em;text-decoration:none;display:inline-flex;align-items:center;">⚙ ADMIN</a>
     </div>
   </header>
 
@@ -1764,6 +1768,10 @@ async function loadExpandRow(id) {
       <div class="person-role">${escHtml(p.role || '')}</div>
       ${(p.emails || []).map(e => `<div class="person-contact">✉ ${escHtml(e)}</div>`).join('')}
       ${(p.phones || []).map(ph => `<div class="person-contact">✆ ${escHtml(ph)}</div>`).join('')}
+      <div style="margin-top:8px">
+        <div style="font-family:var(--mono);font-size:0.55rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text3);margin-bottom:4px;cursor:pointer" onclick="togglePersonNotes(${p.id}, this)">▶ Notes</div>
+        <div id="person-notes-${p.id}" style="display:none;margin-top:6px"></div>
+      </div>
     </div>
   `).join('') : '<span style="color:var(--text3);font-size:.75rem;font-family:var(--mono)">No contacts found</span>';
 
@@ -2669,6 +2677,58 @@ async function runSingleEnrich() {
     setStatus('enrich', 'error', 'ERROR');
     btn.disabled = false;
     appendLine(tbody, `ERROR: ${e.message}`, 't-err');
+  }
+}
+
+async function checkAuth() {
+  const res = await fetch('/api/auth/me');
+  const me = await res.json();
+  if (!me.logged_in) { window.location.href = '/login'; return; }
+  if (me.role === 'admin') {
+    document.getElementById('admin-link').classList.remove('hidden');
+}
+}
+checkAuth();
+
+async function logout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  window.location.href = '/login';
+}
+
+async function togglePersonNotes(personId, labelEl) {
+  const container = document.getElementById(`person-notes-${personId}`);
+  const isOpen = container.style.display !== 'none';
+
+  if (isOpen) {
+    container.style.display = 'none';
+    labelEl.textContent = '▶ Notes';
+    return;
+  }
+
+  labelEl.textContent = '▼ Notes';
+  container.style.display = 'block';
+  container.innerHTML = '<span style="font-family:var(--mono);font-size:0.65rem;color:var(--text3)">Loading…</span>';
+
+  try {
+    const res = await fetch(`/api/people/${personId}/notes`);
+    const notes = await res.json();
+
+    if (!notes.length) {
+      container.innerHTML = '<span style="font-family:var(--mono);font-size:0.65rem;color:var(--text3)">No notes yet.</span>';
+      return;
+    }
+
+    container.innerHTML = notes.map(n => `
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 10px;margin-bottom:6px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="font-family:var(--mono);font-size:0.6rem;color:var(--amber)">${escHtml(n.username)}</span>
+          <span style="font-family:var(--mono);font-size:0.58rem;color:var(--text3)">${n.created_at.split('T')[0]}</span>
+        </div>
+        <div style="font-size:0.8rem;color:var(--text2);line-height:1.4">${escHtml(n.note)}</div>
+      </div>
+    `).join('');
+  } catch(e) {
+    container.innerHTML = '<span style="font-family:var(--mono);font-size:0.65rem;color:var(--red)">Error loading notes</span>';
   }
 }
 

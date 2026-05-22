@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YantraLive — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #0a0b0d;
+  --bg2:      #111318;
+  --bg3:      #181c23;
+  --border:   #242830;
+  --border2:  #2e3440;
+  --amber:    #f5a623;
+  --amber2:   #ffbe4f;
+  --amber-dim:#7a5210;
+  --red:      #e05a4e;
+  --green:    #4caf74;
+  --text:     #dde2ec;
+  --text2:    #8b93a6;
+  --text3:    #5a6070;
+  --mono:     'Space Mono', monospace;
+  --sans:     'Barlow', sans-serif;
+  --cond:     'Barlow Condensed', sans-serif;
+}
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+}
+
+/* topbar */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 52px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+.topbar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.logo-mark {
+  width: 28px; height: 28px;
+  background: var(--amber);
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+}
+.logo-name {
+  font-family: var(--cond);
+  font-weight: 800;
+  font-size: 1.3rem;
+  letter-spacing: 0.05em;
+}
+.logo-name span { color: var(--amber); }
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.topbar-user {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--text3);
+  letter-spacing: 0.1em;
+}
+
+/* buttons */
+.btn {
+  padding: 7px 16px;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  border-radius: 2px;
+  cursor: pointer;
+  border: 1px solid var(--border2);
+  background: none;
+  color: var(--text2);
+  transition: all 0.15s;
+}
+.btn:hover { color: var(--text); border-color: var(--text3); }
+.btn-primary {
+  background: var(--amber);
+  color: #000;
+  border-color: var(--amber);
+  font-weight: 700;
+}
+.btn-primary:hover { background: var(--amber2); border-color: var(--amber2); color: #000; }
+.btn-danger { color: var(--red); border-color: transparent; }
+.btn-danger:hover { border-color: var(--red); background: rgba(224,90,78,0.1); }
+
+/* layout */
+.page { max-width: 800px; margin: 0 auto; padding: 32px 24px; }
+.page-title {
+  font-family: var(--cond);
+  font-weight: 800;
+  font-size: 1.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.page-sub {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--text3);
+  letter-spacing: 0.1em;
+  margin-bottom: 32px;
+}
+
+/* card */
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 24px;
+}
+.card-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.card-title {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.card-body { padding: 20px; }
+
+/* form */
+.form-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.form-group { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 150px; }
+.form-label {
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.form-input {
+  padding: 8px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  border-radius: 2px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.form-input:focus { border-color: var(--amber-dim); }
+.form-select {
+  padding: 8px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+/* status */
+.status-msg {
+  display: none;
+  margin-top: 10px;
+  padding: 7px 12px;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+.status-msg.success {
+  background: rgba(76,175,116,0.1);
+  border: 1px solid rgba(76,175,116,0.3);
+  color: var(--green);
+}
+.status-msg.error {
+  background: rgba(224,90,78,0.1);
+  border: 1px solid rgba(224,90,78,0.3);
+  color: var(--red);
+}
+
+/* user table */
+.user-table { width: 100%; border-collapse: collapse; }
+.user-table th {
+  padding: 8px 12px;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
+}
+.user-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+  color: var(--text2);
+}
+.user-table tr:last-child td { border-bottom: none; }
+.role-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.role-admin { background: rgba(245,166,35,0.12); color: var(--amber); border: 1px solid rgba(245,166,35,0.25); }
+.role-user { background: rgba(139,147,166,0.1); color: var(--text3); border: 1px solid var(--border2); }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-logo">
+    <div class="logo-mark"></div>
+    <div class="logo-name">Yantra<span>Live</span></div>
+  </div>
+  <div class="topbar-right">
+    <span class="topbar-user" id="current-user"></span>
+    <a href="/" class="btn">← Dashboard</a>
+    <button class="btn" onclick="logout()">⎋ Logout</button>
+  </div>
+</header>
+
+<div class="page">
+  <div class="page-title">Admin Panel</div>
+  <div class="page-sub">USER MANAGEMENT</div>
+
+  <!-- create user -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Create User</div>
+    </div>
+    <div class="card-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input class="form-input" type="text" id="new-username" placeholder="username">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input class="form-input" type="password" id="new-password" placeholder="••••••••">
+        </div>
+        <div class="form-group" style="flex:0;min-width:120px">
+          <label class="form-label">Role</label>
+          <select class="form-select" id="new-role">
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="createUser()" style="height:36px;align-self:flex-end">Create</button>
+      </div>
+      <div class="status-msg" id="create-status"></div>
+    </div>
+  </div>
+
+  <!-- user list -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Users</div>
+      <span id="user-count" style="font-family:var(--mono);font-size:0.62rem;color:var(--text3)"></span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <table class="user-table">
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Created</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="user-list">
+          <tr><td colspan="4" style="text-align:center;color:var(--text3);font-family:var(--mono);font-size:0.72rem;padding:24px">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+async function init() {
+  const me = await fetch('/api/auth/me').then(r => r.json());
+  if (!me.logged_in) { window.location.href = '/login'; return; }
+  if (me.role !== 'admin') { window.location.href = '/'; return; }
+  document.getElementById('current-user').textContent = me.username.toUpperCase();
+  loadUsers();
+}
+
+async function loadUsers() {
+  const res = await fetch('/api/admin/users');
+  const users = await res.json();
+  document.getElementById('user-count').textContent = `${users.length} user${users.length !== 1 ? 's' : ''}`;
+  const tbody = document.getElementById('user-list');
+  if (!users.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text3);font-family:var(--mono);font-size:0.72rem;padding:24px">No users.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = users.map(u => `
+    <tr>
+      <td style="color:var(--text);font-weight:500">${esc(u.username)}</td>
+      <td><span class="role-badge role-${u.role}">${u.role}</span></td>
+      <td style="font-family:var(--mono);font-size:0.7rem">${u.created_at.split('T')[0]}</td>
+      <td style="text-align:right">
+        <button class="btn btn-danger" onclick="deleteUser(${u.id}, '${esc(u.username)}')">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function createUser() {
+  const username = document.getElementById('new-username').value.trim();
+  const password = document.getElementById('new-password').value;
+  const role = document.getElementById('new-role').value;
+  const status = document.getElementById('create-status');
+
+  if (!username || !password) {
+    showStatus('create-status', 'error', 'Username and password are required.');
+    return;
+  }
+
+  const res = await fetch('/api/admin/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, role })
+  });
+  const data = await res.json();
+
+  if (!res.ok) {
+    showStatus('create-status', 'error', data.error || 'Failed to create user.');
+    return;
+  }
+
+  showStatus('create-status', 'success', `User "${username}" created.`);
+  document.getElementById('new-username').value = '';
+  document.getElementById('new-password').value = '';
+  loadUsers();
+}
+
+async function deleteUser(id, username) {
+  if (!confirm(`Delete user "${username}"? This cannot be undone.`)) return;
+  const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.error);
+    return;
+  }
+  loadUsers();
+}
+
+async function logout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  window.location.href = '/login';
+}
+
+function showStatus(id, type, msg) {
+  const el = document.getElementById(id);
+  el.className = `status-msg ${type}`;
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 3000);
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+init();
+</script>
+</body>
+</html>

@@ -606,6 +606,7 @@ input[type=file] { display: none; }
     <div class="logo-name">Yantra<span>Live</span></div>
     <span class="logo-badge">Field</span>
   </div>
+  <button onclick="logout()" style="background:none;border:1px solid var(--border2);color:var(--text2);padding:4px 10px;border-radius:2px;font-family:var(--mono);font-size:0.6rem;letter-spacing:0.1em;">⎋</button>
 </header>
 
 <!-- TABS -->
@@ -618,6 +619,9 @@ input[type=file] { display: none; }
   </button>
   <button class="tab" data-tab="addtask">
     <span>+</span> Add Task
+  </button>
+  <button class="tab" data-tab="contacts">
+    <span>◈</span> Contacts
   </button>
 </nav>
 
@@ -752,6 +756,68 @@ input[type=file] { display: none; }
   </div>
 </div>
 
+<!-- CONTACTS PANEL -->
+
+<div class="panel" id="panel-contacts">
+
+  <!-- company search -->
+  <div class="section-title">Contacts</div>
+  <div class="section-desc">Search for a company to view its contacts.</div>
+
+  <!-- list view -->
+  <div id="contacts-list-view">
+    <div style="position:relative;margin-bottom:14px">
+      <input
+        id="company-search"
+        type="text"
+        placeholder="Search company…"
+        oninput="searchCompanies()"
+        style="width:100%;padding:10px 12px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:0.78rem;outline:none"
+      >
+      <div id="company-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;z-index:50;max-height:200px;overflow-y:auto;margin-top:4px;box-shadow:0 4px 16px rgba(0,0,0,0.3)"></div>
+    </div>
+
+    <div id="contacts-people-list"></div>
+  </div>
+
+  <!-- person detail view -->
+  <div id="contacts-person-view" style="display:none">
+    <button onclick="backToContacts()" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--text3);font-family:var(--mono);font-size:0.7rem;cursor:pointer;margin-bottom:16px;padding:0">
+      ← Back
+    </button>
+    <div class="result-card">
+      <div class="result-card-header">
+        <div>
+          <div class="result-card-title" id="person-view-name"></div>
+          <div class="result-card-sub" id="person-view-role"></div>
+        </div>
+      </div>
+      <div class="result-card-body">
+        <div class="result-field" id="person-view-email-wrap">
+          <div class="result-field-label">Email</div>
+          <div class="result-field-value" id="person-view-emails"></div>
+        </div>
+        <div class="result-field" id="person-view-phone-wrap">
+          <div class="result-field-label">Phone</div>
+          <div class="result-field-value" id="person-view-phones"></div>
+        </div>
+        <div class="result-field">
+          <div class="result-field-label">Notes</div>
+          <div id="person-notes-list" style="margin-bottom:12px"></div>
+          <textarea
+            id="person-view-notes"
+            class="voice-note-textarea"
+            placeholder="Add a note…"
+            style="margin-top:4px"
+          ></textarea>
+          <button class="btn-save-note" id="person-view-save-note" onclick="savePersonViewNote()">💾 Save Note</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
 <script>
 // ── STATE ─────────────────────────────────────────────────────────────────
 const images = { front: null, back: null }; // { file, dataUrl }
@@ -766,6 +832,7 @@ document.querySelectorAll('.tab').forEach(btn => {
     btn.classList.add('active');
     document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'tasks') loadTasks();
+    if (btn.dataset.tab === 'contacts') initContacts();
     if (btn.dataset.tab === 'addtask') loadCompanyList();
   });
 });
@@ -1166,18 +1233,18 @@ async function savePersonNote(index) {
 function useTestData() {
   extractedData = {
     company: {
-      name: "Test Company Ltd.",
-      addresses: ["123 Test Street, Bengaluru - 560001"],
+      name: "John Incorporated Ltd. Co.",
+      addresses: ["123 Test Lane, Bengaluru - 560003"],
       phones: ["+91 80 1234 5678"],
-      websites: ["www.testcompany.com"],
-      company_info: "Test company for development purposes."
+      websites: ["www.testcompany123.com"],
+      company_info: "Test company for development purposes 2: Electric Boogaloo"
     },
     people: [
       {
-        name: "Test Person",
+        name: "Test Person Jr.",
         role: "Test Manager",
-        emails: ["test@testcompany.com"],
-        phones: ["+91 98765 43210"]
+        emails: ["test@testcompany123.com"],
+        phones: ["+91 98765 43212"]
       }
     ]
   };
@@ -1186,6 +1253,187 @@ function useTestData() {
   document.getElementById('scan-result').style.display = 'block';
   document.getElementById('btn-scan').style.display = 'none';
   document.getElementById('btn-reset').style.display = 'block';
+}
+
+// ── CONTACTS ──────────────────────────────────────────────────────────────
+let allCompaniesCache = [];
+let currentPersonId = null;
+
+async function initContacts() {
+  if (allCompaniesCache.length) return;
+  try {
+    const res = await fetch('/api/companies/list');
+    allCompaniesCache = await res.json();
+  } catch(e) {}
+}
+
+function searchCompanies() {
+  const q = document.getElementById('company-search').value.trim().toLowerCase();
+  const dropdown = document.getElementById('company-dropdown');
+
+  if (!q) { dropdown.style.display = 'none'; return; }
+
+  const matches = allCompaniesCache.filter(c => c.name.toLowerCase().includes(q)).slice(0, 8);
+
+  if (!matches.length) { dropdown.style.display = 'none'; return; }
+
+  dropdown.style.display = 'block';
+  dropdown.innerHTML = matches.map(c => `
+    <div
+      onclick="selectCompany(${c.id}, '${esc(c.name)}')"
+      style="padding:10px 14px;cursor:pointer;font-family:var(--cond);font-size:0.9rem;color:var(--text2);border-bottom:1px solid var(--border);transition:background 0.1s"
+      onmouseover="this.style.background='var(--bg3)'"
+      onmouseout="this.style.background=''"
+    >${esc(c.name)}</div>
+  `).join('');
+}
+
+async function selectCompany(companyId, companyName) {
+  document.getElementById('company-search').value = companyName;
+  document.getElementById('company-dropdown').style.display = 'none';
+  document.getElementById('contacts-people-list').innerHTML =
+    '<div class="empty"><span class="spinner"></span></div>';
+
+  try {
+    const res = await fetch(`/api/company/${companyId}/people`);
+    const people = await res.json();
+    renderContactsPeople(people, companyName);
+  } catch(e) {
+    document.getElementById('contacts-people-list').innerHTML =
+      '<div class="empty"><p>Error loading contacts</p></div>';
+  }
+}
+
+function renderContactsPeople(people, companyName) {
+  const container = document.getElementById('contacts-people-list');
+
+  if (!people.length) {
+    container.innerHTML = '<div class="empty"><p>No contacts for this company.</p></div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <div style="font-family:var(--mono);font-size:0.6rem;color:var(--text3);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:10px">${esc(companyName)} — ${people.length} contact${people.length !== 1 ? 's' : ''}</div>
+    ${people.map(p => `
+      <div class="person-card" onclick="openPersonView(${JSON.stringify(p).replace(/"/g, '&quot;')})" style="cursor:pointer">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div class="person-name">${esc(p.name || '—')}</div>
+            <div class="person-role">${esc(p.role || '')}</div>
+          </div>
+          <span style="color:var(--text3);font-size:0.8rem">›</span>
+        </div>
+        ${p.notes ? `<div style="font-size:0.72rem;color:var(--text3);margin-top:6px;font-style:italic">${esc(p.notes.slice(0, 60))}${p.notes.length > 60 ? '…' : ''}</div>` : ''}
+      </div>
+    `).join('')}
+  `;
+}
+
+async function openPersonView(person) {
+  currentPersonId = person.id;
+
+  document.getElementById('person-view-name').textContent = person.name || '—';
+  document.getElementById('person-view-role').textContent = person.role || '';
+
+  const emails = person.emails || [];
+  const phones = person.phones || [];
+
+  document.getElementById('person-view-email-wrap').style.display = emails.length ? 'block' : 'none';
+  document.getElementById('person-view-emails').innerHTML = emails.map(e =>
+    `<a href="mailto:${esc(e)}" style="color:var(--blue);display:block">${esc(e)}</a>`
+  ).join('');
+
+  document.getElementById('person-view-phone-wrap').style.display = phones.length ? 'block' : 'none';
+  document.getElementById('person-view-phones').innerHTML = phones.map(ph =>
+    `<a href="tel:${esc(ph)}" style="color:var(--blue);display:block">${esc(ph)}</a>`
+  ).join('');
+
+  // clear and load notes
+  document.getElementById('person-view-notes').value = '';
+  document.getElementById('person-notes-list').innerHTML =
+    '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--text3)">Loading notes…</div>';
+
+  document.getElementById('contacts-list-view').style.display = 'none';
+  document.getElementById('contacts-person-view').style.display = 'block';
+
+  loadPersonNotes(person.id);
+}
+
+async function loadPersonNotes(personId) {
+  try {
+    const res = await fetch(`/api/people/${personId}/notes`);
+    const notes = await res.json();
+    renderPersonNotes(notes);
+  } catch(e) {
+    document.getElementById('person-notes-list').innerHTML =
+      '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--red)">Error loading notes</div>';
+  }
+}
+
+function renderPersonNotes(notes) {
+  const container = document.getElementById('person-notes-list');
+  if (!notes.length) {
+    container.innerHTML = '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--text3)">No notes yet.</div>';
+    return;
+  }
+  container.innerHTML = notes.map(n => `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+        <span style="font-family:var(--mono);font-size:0.62rem;color:var(--amber)">${esc(n.username)}</span>
+        <span style="font-family:var(--mono);font-size:0.58rem;color:var(--text3)">${n.created_at.split('T')[0]}</span>
+      </div>
+      <div style="font-size:0.82rem;color:var(--text2);line-height:1.4">${esc(n.note)}</div>
+    </div>
+  `).join('');
+}
+
+function backToContacts() {
+  currentPersonId = null;
+  document.getElementById('contacts-person-view').style.display = 'none';
+  document.getElementById('contacts-list-view').style.display = 'block';
+}
+
+async function savePersonViewNote() {
+  if (!currentPersonId) return;
+  const notes = document.getElementById('person-view-notes').value.trim();
+  if (!notes) return;
+  const btn = document.getElementById('person-view-save-note');
+  btn.disabled = true;
+  btn.textContent = '⟳ Saving…';
+
+  try {
+    await fetch(`/api/people/${currentPersonId}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes })
+    });
+    document.getElementById('person-view-notes').value = '';
+    btn.textContent = '✓ Saved';
+    btn.style.borderColor = 'var(--green)';
+    btn.style.color = 'var(--green)';
+    loadPersonNotes(currentPersonId);
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = '💾 Save Note';
+      btn.style.borderColor = '';
+      btn.style.color = '';
+    }, 2000);
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '💾 Save Note';
+  }
+}
+
+// close dropdown when tapping outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('#company-search') && !e.target.closest('#company-dropdown')) {
+    document.getElementById('company-dropdown').style.display = 'none';
+  }
+});
+
+async function logout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  window.location.href = '/login';
 }
 
 // ── UTILS ─────────────────────────────────────────────────────────────────

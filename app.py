@@ -12,6 +12,9 @@ from pathlib import Path
 from datetime import datetime
 import re
 import sys
+from flask import session, redirect, url_for
+from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -41,6 +44,7 @@ ZOHO_BASE_URL = os.getenv("ZOHO_BASE_URL", "https://www.zohoapis.in/crm/v2")
 ZOHO_ACCOUNTS_URL = os.getenv("ZOHO_ACCOUNTS_URL", "https://accounts.zoho.in")
 
 app = Flask(__name__)
+app.secret_key = os.getenv("SECRET_KEY", "dev-secret-change-in-production")
 
 # DB_PATH = os.environ.get("DB_PATH", str(Path(__file__).parent / "contacts.db"))
 
@@ -93,13 +97,13 @@ def get_companies_filtered(categories=None, industries=None, types=None, search=
     if search:
         sql += """
             AND (
-                c.name LIKE %s
-                OR e.domain LIKE %s
-                OR c.company_info LIKE %s
+                c.name ILIKE %s
+                OR e.domain ILIKE %s
+                OR c.company_info ILIKE %s
                 OR EXISTS (
                     SELECT 1 FROM people p
                     WHERE p.company_id = c.id
-                    AND (p.name LIKE %s OR p.emails LIKE %s)
+                    AND (p.name ILIKE %s OR p.emails ILIKE %s)
                 )
             )
         """
@@ -378,11 +382,142 @@ def is_mobile():
     return any(kw in ua for kw in mobile_keywords)
 
 
+# ────────────────────────────────────────────────────────────────────
+# Auth routes
+# ────────────────────────────────────────────────────────────────────
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user_id" not in session:
+            return redirect(url_for("login_page"))
+        return f(*args, **kwargs)
+    return decorated
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user_id" not in session:
+            return redirect(url_for("login_page"))
+        if session.get("role") != "admin":
+            return jsonify({"error": "admin only"}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route("/login")
+def login_page():
+    if "user_id" in session:
+        return redirect(url_for("index"))
+    return render_template("login.html")
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_login():
+    data = request.json or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "")
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+    user = cursor.fetchone()
+    close_db(conn)
+
+    if not user or not check_password_hash(user["password_hash"], password):
+        return jsonify({"error": "Invalid username or password"}), 401
+
+    session["user_id"] = user["id"]
+    session["username"] = user["username"]
+    session["role"] = user["role"]
+    return jsonify({"ok": True, "role": user["role"]})
+
+@app.route("/api/auth/logout", methods=["POST"])
+def api_logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+@app.route("/api/auth/me")
+def api_me():
+    if "user_id" not in session:
+        return jsonify({"logged_in": False})
+    return jsonify({
+        "logged_in": True,
+        "user_id": session["user_id"],
+        "username": session["username"],
+        "role": session["role"]
+    })
+
+@app.route("/admin")
+@admin_required
+def admin_page():
+    return render_template("admin.html")
+
+@app.route("/api/admin/users", methods=["GET"])
+@admin_required
+def api_get_users():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, username, role, created_at FROM users ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+    close_db(conn)
+    return jsonify([dict(r) for r in rows])
+
+@app.route("/api/admin/users", methods=["POST"])
+@admin_required
+def api_create_user():
+    data = request.json or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "")
+    role = data.get("role", "user")
+
+    if not username or not password:
+        return jsonify({"error": "username and password required"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO users (username, password_hash, role, created_at)
+            VALUES (%s, %s, %s, %s)
+        """, (username, generate_password_hash(password), role, datetime.now().isoformat()))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        close_db(conn)
+        return jsonify({"error": "username already exists"}), 409
+    close_db(conn)
+    return jsonify({"ok": True})
+
+@app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
+@admin_required
+def api_delete_user(user_id):
+    # can't delete yourself
+    if user_id == session["user_id"]:
+        return jsonify({"error": "You cannot delete your own account"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # can't delete the last admin
+    cursor.execute("SELECT COUNT(*) as count FROM users WHERE role = 'admin'")
+    admin_count = cursor.fetchone()["count"]
+    cursor.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+    user = cursor.fetchone()
+
+    if user and user["role"] == "admin" and admin_count <= 1:
+        close_db(conn)
+        return jsonify({"error": "Cannot delete the last admin account"}), 400
+
+    cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    conn.commit()
+    close_db(conn)
+    return jsonify({"ok": True})
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Routes
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.route("/")
+@login_required
 def index():
     stats = get_stats()
     categories = get_all_categories()
@@ -469,6 +604,7 @@ def api_people(company_id):
             "role": p["role"],
             "phones": safe_json(p["phones"]),
             "emails": safe_json(p["emails"]),
+            "notes": p["notes"] or ""
         })
     return jsonify(result)
 
@@ -796,6 +932,7 @@ def push_to_zoho(task_id):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.route("/mobile")
+@login_required
 def mobile_index():
     return render_template("mobile.html")
 
@@ -1053,12 +1190,34 @@ def api_gpt_bulk():
 #  Person notes
 # ─────────────────────────────────────────────────────────────────────────────
 
-@app.route("/api/people/<int:person_id>/notes", methods=["POST"])
-def save_person_notes(person_id):
-    notes = (request.json or {}).get("notes", "")
+@app.route("/api/people/<int:person_id>/notes", methods=["GET"])
+@login_required
+def get_person_notes(person_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("UPDATE people SET notes = %s WHERE id = %s", (notes, person_id))
+    cursor.execute("""
+        SELECT pn.id, pn.note, pn.created_at, u.username
+        FROM person_notes pn
+        JOIN users u ON u.id = pn.user_id
+        WHERE pn.person_id = %s
+        ORDER BY pn.created_at DESC
+    """, (person_id,))
+    rows = cursor.fetchall()
+    close_db(conn)
+    return jsonify([dict(r) for r in rows])
+
+@app.route("/api/people/<int:person_id>/notes", methods=["POST"])
+@login_required
+def save_person_notes(person_id):
+    note = (request.json or {}).get("notes", "").strip()
+    if not note:
+        return jsonify({"error": "no note provided"}), 400
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO person_notes (person_id, user_id, note, created_at)
+        VALUES (%s, %s, %s, %s)
+    """, (person_id, session["user_id"], note, datetime.now().isoformat()))
     conn.commit()
     close_db(conn)
     return jsonify({"ok": True})

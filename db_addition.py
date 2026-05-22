@@ -226,6 +226,7 @@ def save_company(data: dict, source_folder: str) -> int | None:
         cursor.execute("""
             INSERT INTO companies (name, addresses, phones, websites, company_info, additional_info, source_folder)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
         """, (
             name or company.get("name"),
             normalize(company.get("addresses")),
@@ -235,7 +236,7 @@ def save_company(data: dict, source_folder: str) -> int | None:
             company.get("additional_info"),
             source_folder,
         ))
-        company_id = cursor.lastrowid
+        company_id = cursor.fetchone()["id"]
         print(f"  Inserted new company '{name}' (id={company_id})")
 
     conn.commit()
