@@ -1190,7 +1190,9 @@ const recognizers = {};
 
 function toggleMic(index) {
   if (recognizers[index]) {
-    recognizers[index].stop();
+    const rec = recognizers[index];
+    delete recognizers[index];
+    rec.stop();
     return;
   }
 
@@ -1202,13 +1204,13 @@ function toggleMic(index) {
 
   const rec = new SpeechRecognition();
   rec.continuous = true;
-  rec.interimResults = true;
+  rec.interimResults = false;
   rec.lang = 'en-US';
 
   const btn = document.getElementById(`mic-${index}`);
   const status = document.getElementById(`mic-status-${index}`);
   const textarea = document.getElementById(`note-${index}`);
-  const existingText = textarea.value;
+  let finalText = textarea.value;
 
   rec.onstart = () => {
     recognizers[index] = rec;
@@ -1219,26 +1221,27 @@ function toggleMic(index) {
 
   rec.onresult = (e) => {
     let interim = '';
-    let final = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (e.results[i].isFinal) {
-        final += e.results[i][0].transcript;
+              finalText += e.results[i][0].transcript + ' ';
       } else {
         interim += e.results[i][0].transcript;
       }
     }
-    textarea.value = existingText + final + interim;
+      textarea.value = finalText + interim;
   };
 
   rec.onend = () => {
-    delete recognizers[index];
+    if (recognizers[index]) {
+        rec.start();
+        return;
+    }
     btn.classList.remove('recording');
     btn.textContent = '🎙';
     status.textContent = 'Tap to record';
   };
 
   rec.onerror = (e) => {
-    delete recognizers[index];
     btn.classList.remove('recording');
     btn.textContent = '🎙';
     status.textContent = `Error: ${e.error}`;
@@ -1460,7 +1463,6 @@ async function savePersonViewNote() {
   const btn = document.getElementById('person-view-save-note');
   btn.disabled = true;
   btn.textContent = '⟳ Saving…';
-
   try {
     await fetch(`/api/people/${currentPersonId}/notes`, {
       method: 'POST',
@@ -1509,7 +1511,9 @@ let personViewRecognizer = null;
 
 function toggleMicPersonView() {
   if (personViewRecognizer) {
-    personViewRecognizer.stop();
+    const rec = personViewRecognizer;
+    personViewRecognizer = null; 
+    rec.stop();
     return;
   }
 
@@ -1521,13 +1525,13 @@ function toggleMicPersonView() {
 
   const rec = new SpeechRecognition();
   rec.continuous = true;
-  rec.interimResults = true;
+  rec.interimResults = false;
   rec.lang = 'en-US';
 
   const btn = document.getElementById('mic-person-view');
   const status = document.getElementById('mic-status-person-view');
   const textarea = document.getElementById('person-view-notes');
-  const existingText = textarea.value;
+  let finalText = textarea.value;
 
   rec.onstart = () => {
     personViewRecognizer = rec;
@@ -1538,26 +1542,27 @@ function toggleMicPersonView() {
 
   rec.onresult = (e) => {
     let interim = '';
-    let final = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (e.results[i].isFinal) {
-        final += e.results[i][0].transcript;
+            finalText += e.results[i][0].transcript + ' ';
       } else {
         interim += e.results[i][0].transcript;
       }
     }
-    textarea.value = existingText + final + interim;
+    textarea.value = finalText + interim;
   };
 
   rec.onend = () => {
-    personViewRecognizer = null;
+    if (recognizers[index]) {
+        rec.start();
+        return;
+    }
     btn.classList.remove('recording');
     btn.textContent = '🎙';
     status.textContent = 'Tap to record';
-  };
+} ;
 
   rec.onerror = (e) => {
-    personViewRecognizer = null;
     btn.classList.remove('recording');
     btn.textContent = '🎙';
     status.textContent = `Error: ${e.error}`;
