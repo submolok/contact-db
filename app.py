@@ -1316,6 +1316,29 @@ def edit_note(note_id):
     close_db(conn)
     return jsonify({"ok": True, "deleted": not note})
 
+@app.route("/api/notes/cleanup", methods=["POST"])
+@login_required
+def cleanup_note():
+    note = (request.json or {}).get("note", "").strip()
+    if not note:
+        return jsonify({"error": "no note provided"}), 400
+    import openai
+    client = openai.OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{
+            "role": "user",
+            "content": f"""You are cleaning up a voice note from a business meeting.
+            Summarize and condense the following note, fix grammar and punctuation, and make it concise and professional.
+            Keep all important information but remove filler words and repetition.
+            Return only the cleaned note, no explanation.
+
+            Raw note:
+            {note}"""
+                    }]
+                )
+    return jsonify({"cleaned": response.choices[0].message.content.strip()})
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Pipeline execution + SSE streaming
 # ─────────────────────────────────────────────────────────────────────────────
