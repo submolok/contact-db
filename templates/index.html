@@ -1528,6 +1528,7 @@ let searchTimer = null;
 let currentSort = 'name';
 let currentDir = 'asc';
 let currentUsername = '';
+let currentRole = '';
 
 // ── TABS ──────────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -2685,6 +2686,7 @@ async function runSingleEnrich() {
 async function checkAuth() {
   const res = await fetch('/api/auth/me');
   const me = await res.json();
+  currentRole = me.role;
   if (!me.logged_in) { window.location.href = '/login'; return; }
   currentUsername = me.username;
   if (me.role === 'admin') {
@@ -2714,27 +2716,41 @@ async function togglePersonNotes(personId, labelEl) {
 
   try {
     const res = await fetch(`/api/people/${personId}/notes`);
-    const notes = await res.json();
+    const data = await res.json();
+    const notes = data.notes;
+    const hiddenCount = data.hidden_count;
 
-    if (!notes.length) {
-      container.innerHTML = '<span style="font-family:var(--mono);font-size:0.65rem;color:var(--text3)">No notes yet.</span>';
-      return;
+    let html = '';
+    if (hiddenCount > 0) {
+      html += `
+        <div style="background:var(--bg);border:1px solid var(--border2);border-radius:3px;padding:6px 10px;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+          <span>🔒</span>
+          <span style="font-family:var(--mono);font-size:0.6rem;color:var(--text3)">${hiddenCount} admin note${hiddenCount !== 1 ? 's' : ''} hidden</span>
+        </div>
+      `;
     }
 
-    container.innerHTML = notes.map(n => renderNoteCard(n)).join('');
-
-    container.innerHTML = notes.map(n => renderNoteCard(n)).join('') + `
-      <div id="add-note-wrap-${personId}" style="margin-top:8px">
-        <button onclick="showAddNote(${personId})" id="btn-add-note-${personId}" style="background:none;border:1px solid var(--border2);color:var(--text3);font-family:var(--mono);font-size:0.6rem;padding:4px 10px;border-radius:2px;cursor:pointer;letter-spacing:0.08em;transition:all 0.15s" onmouseover="this.style.color='var(--amber)';this.style.borderColor='var(--amber-dim)'" onmouseout="this.style.color='var(--text3)';this.style.borderColor='var(--border2)'">+ Add Note</button>
-        <div id="add-note-form-${personId}" style="display:none;margin-top:8px">
-          <textarea id="add-note-input-${personId}" style="width:100%;background:var(--bg2);border:1px solid var(--amber-dim);border-radius:3px;color:var(--text);font-family:var(--sans);font-size:0.82rem;padding:6px;resize:vertical;min-height:60px;outline:none"></textarea>
-          <div style="display:flex;gap:6px;margin-top:6px">
-            <button onclick="submitAddNote(${personId})" style="flex:1;padding:5px;background:var(--amber);color:#000;border:none;border-radius:3px;font-family:var(--cond);font-weight:700;font-size:0.8rem;cursor:pointer">Save</button>
-            <button onclick="cancelAddNote(${personId})" style="padding:5px 10px;background:none;border:1px solid var(--border2);color:var(--text2);border-radius:3px;font-family:var(--mono);font-size:0.7rem;cursor:pointer">Cancel</button>
+    if (!notes.length && !hiddenCount) {
+      container.innerHTML = '<span style="font-family:var(--mono);font-size:0.65rem;color:var(--text3)">No notes yet.</span>';
+    } else {
+      container.innerHTML = html + notes.map(n => renderNoteCard(n)).join('') + `
+        <div id="add-note-wrap-${personId}" style="margin-top:8px">
+          <button onclick="showAddNote(${personId})" id="btn-add-note-${personId}" style="background:none;border:1px solid var(--border2);color:var(--text3);font-family:var(--mono);font-size:0.6rem;padding:4px 10px;border-radius:2px;cursor:pointer;letter-spacing:0.08em;transition:all 0.15s" onmouseover="this.style.color='var(--amber)';this.style.borderColor='var(--amber-dim)'" onmouseout="this.style.color='var(--text3)';this.style.borderColor='var(--border2)'">+ Add Note</button>
+          <div id="add-note-form-${personId}" style="display:none;margin-top:8px">
+            <textarea id="add-note-input-${personId}" style="width:100%;background:var(--bg2);border:1px solid var(--amber-dim);border-radius:3px;color:var(--text);font-family:var(--sans);font-size:0.82rem;padding:6px;resize:vertical;min-height:60px;outline:none"></textarea>
+            ${currentRole === 'admin' ? `
+            <select id="add-note-visibility-${personId}" style="width:100%;margin-top:6px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.7rem;padding:6px 8px;border-radius:2px;outline:none">
+              <option value="all">Visible to all</option>
+              <option value="admin">Admin only</option>
+            </select>` : ''}
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button onclick="submitAddNote(${personId})" style="flex:1;padding:5px;background:var(--amber);color:#000;border:none;border-radius:3px;font-family:var(--cond);font-weight:700;font-size:0.8rem;cursor:pointer">Save</button>
+              <button onclick="cancelAddNote(${personId})" style="padding:5px 10px;background:none;border:1px solid var(--border2);color:var(--text2);border-radius:3px;font-family:var(--mono);font-size:0.7rem;cursor:pointer">Cancel</button>
+            </div>
           </div>
         </div>
-      </div>
-    `;
+      `;
+    }
   } catch(e) {
     container.innerHTML = '<span style="font-family:var(--mono);font-size:0.65rem;color:var(--red)">Error loading notes</span>';
   }
@@ -2818,19 +2834,36 @@ async function submitAddNote(personId) {
     const res = await fetch(`/api/people/${personId}/notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ notes: note })
+      body: JSON.stringify({ notes: note, visibility: document.getElementById(`add-note-visibility-${personId}`)?.value || 'all' })
     });
     if (!res.ok) throw new Error('Failed to save');
 
-    // reload notes
     const notesRes = await fetch(`/api/people/${personId}/notes`);
-    const notes = await notesRes.json();
+    const notesData = await notesRes.json();
+    const notes = notesData.notes;
+    const hiddenCount = notesData.hidden_count;
     const container = document.getElementById(`person-notes-${personId}`);
-    container.innerHTML = notes.map(n => renderNoteCard(n)).join('') + `
+
+    let html = '';
+    if (hiddenCount > 0) {
+      html += `
+        <div style="background:var(--bg);border:1px solid var(--border2);border-radius:3px;padding:6px 10px;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+          <span>🔒</span>
+          <span style="font-family:var(--mono);font-size:0.6rem;color:var(--text3)">${hiddenCount} admin note${hiddenCount !== 1 ? 's' : ''} hidden</span>
+        </div>
+      `;
+    }
+
+    container.innerHTML = html + notes.map(n => renderNoteCard(n)).join('') + `
       <div id="add-note-wrap-${personId}" style="margin-top:8px">
         <button onclick="showAddNote(${personId})" id="btn-add-note-${personId}" style="background:none;border:1px solid var(--border2);color:var(--text3);font-family:var(--mono);font-size:0.6rem;padding:4px 10px;border-radius:2px;cursor:pointer;letter-spacing:0.08em">+ Add Note</button>
         <div id="add-note-form-${personId}" style="display:none;margin-top:8px">
           <textarea id="add-note-input-${personId}" style="width:100%;background:var(--bg2);border:1px solid var(--amber-dim);border-radius:3px;color:var(--text);font-family:var(--sans);font-size:0.82rem;padding:6px;resize:vertical;min-height:60px;outline:none"></textarea>
+          ${currentRole === 'admin' ? `
+          <select id="add-note-visibility-${personId}" style="width:100%;margin-top:6px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.7rem;padding:6px 8px;border-radius:2px;outline:none">
+            <option value="all">Visible to all</option>
+            <option value="admin">Admin only</option>
+          </select>` : ''}
           <div style="display:flex;gap:6px;margin-top:6px">
             <button onclick="submitAddNote(${personId})" style="flex:1;padding:5px;background:var(--amber);color:#000;border:none;border-radius:3px;font-family:var(--cond);font-weight:700;font-size:0.8rem;cursor:pointer">Save</button>
             <button onclick="cancelAddNote(${personId})" style="padding:5px 10px;background:none;border:1px solid var(--border2);color:var(--text2);border-radius:3px;font-family:var(--mono);font-size:0.7rem;cursor:pointer">Cancel</button>

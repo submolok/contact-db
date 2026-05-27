@@ -24,3 +24,4 @@ templates/old2index.html
 templates/oldindex.html
 migrate.py
 ngrok.exe
+export_to_zoho.py

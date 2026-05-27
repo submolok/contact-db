@@ -761,7 +761,7 @@ input[type=file] { display: none; }
         </div>
       </div>
     </div>
-
+  </div>
 </div>
 
 <!-- TASKS PANEL -->
@@ -897,6 +897,12 @@ input[type=file] { display: none; }
             placeholder="Add a note…"
             style="margin-top:8px"
           ></textarea>
+          <div id="visibility-select-wrap" style="display:none;margin-top:8px">
+            <select id="note-visibility" style="width:100%;background:var(--bg2);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.72rem;padding:8px 10px;border-radius:4px;outline:none">
+              <option value="all">Visible to all</option>
+              <option value="admin">Admin only</option>
+            </select>
+          </div>
           <div style="display:flex;gap:8px;margin-top:8px">
             <button class="btn-save-note" id="person-view-save-note" onclick="savePersonViewNote()" style="flex:1">💾 Save Note</button>
             <button class="btn-save-note" id="person-view-cleanup" onclick="cleanupPersonViewNote()" style="flex:0;padding:9px 14px;border-color:var(--border2);color:var(--text2)">✨</button>
@@ -1482,8 +1488,8 @@ async function openPersonView(person) {
 async function loadPersonNotes(personId) {
   try {
     const res = await fetch(`/api/people/${personId}/notes`);
-    const notes = await res.json();
-    renderPersonNotes(notes);
+    const data = await res.json();
+    renderPersonNotes(data.notes, data.hidden_count);
   } catch(e) {
     document.getElementById('person-notes-list').innerHTML =
       '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--red)">Error loading notes</div>';
@@ -1491,30 +1497,27 @@ async function loadPersonNotes(personId) {
 }
 
 
-function renderPersonNotes(notes) {
+function renderPersonNotes(notes, hiddenCount) {
   const container = document.getElementById('person-notes-list');
-  if (!notes.length) {
+  let html = '';
+
+  if (hiddenCount > 0) {
+    html += `
+      <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:4px;padding:8px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:1rem">🔒</span>
+        <span style="font-family:var(--mono);font-size:0.65rem;color:var(--text3)">${hiddenCount} admin note${hiddenCount !== 1 ? 's' : ''} hidden</span>
+      </div>
+    `;
+  }
+
+  if (!notes.length && !hiddenCount) {
     container.innerHTML = '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--text3)">No notes yet.</div>';
     return;
   }
-  container.innerHTML = notes.map(n => renderNoteCard(n, 'person-notes-list', () => loadPersonNotes(currentPersonId))).join('');
+
+  html += notes.map(n => renderNoteCard(n, 'person-notes-list', () => loadPersonNotes(currentPersonId))).join('');
+  container.innerHTML = html;
 }
-// function renderPersonNotes(notes) {
-//   const container = document.getElementById('person-notes-list');
-//   if (!notes.length) {
-//     container.innerHTML = '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--text3)">No notes yet.</div>';
-//     return;
-//   }
-//   container.innerHTML = notes.map(n => `
-//     <div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:10px;margin-bottom:8px">
-//       <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-//         <span style="font-family:var(--mono);font-size:0.62rem;color:var(--amber)">${esc(n.username)}</span>
-//         <span style="font-family:var(--mono);font-size:0.58rem;color:var(--text3)">${n.created_at.split('T')[0]}</span>
-//       </div>
-//       <div style="font-size:0.82rem;color:var(--text2);line-height:1.4">${esc(n.note)}</div>
-//     </div>
-//   `).join('');
-// }
 
 function backToContacts() {
   if (personViewRecognizer) {
@@ -1536,7 +1539,7 @@ async function savePersonViewNote() {
     await fetch(`/api/people/${currentPersonId}/notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ notes: note })
+      body: JSON.stringify({ notes: note, visibility: document.getElementById('note-visibility')?.value || 'all' })
     });
     document.getElementById('person-view-notes').value = '';
     btn.textContent = '✓ Saved';
@@ -1689,12 +1692,15 @@ document.addEventListener('click', e => {
   }
 });
 
-// current username (obviously, lol)
+// current username & visibility perms
 async function initAuth() {
   const res = await fetch('/api/auth/me');
   const me = await res.json();
   if (!me.logged_in) { window.location.href = '/login'; return; }
   currentUsername = me.username;
+  if (me.role === 'admin') {
+    document.getElementById('visibility-select-wrap').style.display = 'block';
+  }
 }
 initAuth();
 

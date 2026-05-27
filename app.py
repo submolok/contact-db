@@ -288,43 +288,43 @@ def get_people_for_company(company_id):
 
 
 # def get_or_create_taiga_project(company_id, company_name, token):
-    conn = get_db()
-    row = conn.execute(
-        "SELECT taiga_project_id, taiga_project_slug FROM companies WHERE id = %s",
-        (company_id,)
-    ).fetchone()
-    close_db(conn)
+    # conn = get_db()
+    # row = conn.execute(
+    #     "SELECT taiga_project_id, taiga_project_slug FROM companies WHERE id = %s",
+    #     (company_id,)
+    # ).fetchone()
+    # close_db(conn)
 
-    if row and row["taiga_project_id"] and row["taiga_project_slug"]:
-        return row["taiga_project_id"], row["taiga_project_slug"], None
+    # if row and row["taiga_project_id"] and row["taiga_project_slug"]:
+    #     return row["taiga_project_id"], row["taiga_project_slug"], None
 
-    # create new project
-    res = requests.post(
-        f"{TAIGA_API_URL}/projects",
-        json={
-            "name": company_name,
-            "description": f"YantraLive project for {company_name}",
-            "is_private": True,
-        },
-        headers={"Authorization": f"Bearer {token}"}
-    )
+    # # create new project
+    # res = requests.post(
+    #     f"{TAIGA_API_URL}/projects",
+    #     json={
+    #         "name": company_name,
+    #         "description": f"YantraLive project for {company_name}",
+    #         "is_private": True,
+    #     },
+    #     headers={"Authorization": f"Bearer {token}"}
+    # )
 
-    if res.status_code != 201:
-        return None, None, f"Failed to create Taiga project: {res.text}"
+    # if res.status_code != 201:
+    #     return None, None, f"Failed to create Taiga project: {res.text}"
 
-    data = res.json()
-    project_id = data.get("id")
-    project_slug = data.get("slug")
+    # data = res.json()
+    # project_id = data.get("id")
+    # project_slug = data.get("slug")
 
-    conn = get_db()
-    conn.execute(
-        "UPDATE companies SET taiga_project_id = %s, taiga_project_slug = %s WHERE id = %s",
-        (project_id, project_slug, company_id)
-    )
-    conn.commit()
-    close_db(conn)
+    # conn = get_db()
+    # conn.execute(
+    #     "UPDATE companies SET taiga_project_id = %s, taiga_project_slug = %s WHERE id = %s",
+    #     (project_id, project_slug, company_id)
+    # )
+    # conn.commit()
+    # close_db(conn)
 
-    return project_id, project_slug, None
+    # return project_id, project_slug, None
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Zoho CRM helpers
@@ -1275,29 +1275,53 @@ def api_gpt_bulk():
 def get_person_notes(person_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT pn.id, pn.note, pn.created_at, u.username
-        FROM person_notes pn
-        JOIN users u ON u.id = pn.user_id
-        WHERE pn.person_id = %s
-        ORDER BY pn.created_at DESC
-    """, (person_id,))
-    rows = cursor.fetchall()
+    role = session.get("role")
+
+    if role == "admin":
+        cursor.execute("""
+            SELECT pn.id, pn.note, pn.created_at, pn.visibility, u.username
+            FROM person_notes pn
+            JOIN users u ON u.id = pn.user_id
+            WHERE pn.person_id = %s
+            ORDER BY pn.created_at DESC
+        """, (person_id,))
+        notes = [dict(r) for r in cursor.fetchall()]
+        hidden_count = 0
+    else:
+        cursor.execute("""
+            SELECT pn.id, pn.note, pn.created_at, pn.visibility, u.username
+            FROM person_notes pn
+            JOIN users u ON u.id = pn.user_id
+            WHERE pn.person_id = %s AND pn.visibility = 'all'
+            ORDER BY pn.created_at DESC
+        """, (person_id,))
+        notes = [dict(r) for r in cursor.fetchall()]
+
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM person_notes
+            WHERE person_id = %s AND visibility = 'admin'
+        """, (person_id,))
+        hidden_count = cursor.fetchone()["count"]
+
     close_db(conn)
-    return jsonify([dict(r) for r in rows])
+    return jsonify({"notes": notes, "hidden_count": hidden_count})
 
 @app.route("/api/people/<int:person_id>/notes", methods=["POST"])
 @login_required
 def save_person_notes(person_id):
-    note = (request.json or {}).get("notes", "").strip()
+    data = request.json or {}
+    note = data.get("notes", "").strip()
+    visibility = data.get("visibility", "all")
     if not note:
         return jsonify({"error": "no note provided"}), 400
+    if session.get("role") != "admin":
+        visibility = "all"
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO person_notes (person_id, user_id, note, created_at)
-        VALUES (%s, %s, %s, %s)
-    """, (person_id, session["user_id"], note, datetime.now().isoformat()))
+        INSERT INTO person_notes (person_id, user_id, note, created_at, visibility)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (person_id, session["user_id"], note, datetime.now().isoformat(), visibility))
     conn.commit()
     close_db(conn)
     return jsonify({"ok": True})
@@ -1314,17 +1338,30 @@ def api_people_search():
     cursor = conn.cursor()
 
     if field == "notes":
-        cursor.execute("""
-            SELECT DISTINCT p.id, p.name, p.role, p.phones, p.emails,
-                   c.name as company_name,
-                   pn.note as matched_note, pn.created_at, u.username
-            FROM people p
-            JOIN companies c ON c.id = p.company_id
-            JOIN person_notes pn ON pn.person_id = p.id
-            JOIN users u ON u.id = pn.user_id
-            WHERE pn.note ILIKE %s
-            ORDER BY p.name
-        """, (f"%{q}%",))
+        if session.get("role") == "admin":
+            cursor.execute("""
+                SELECT DISTINCT p.id, p.name, p.role, p.phones, p.emails,
+                    c.name as company_name,
+                    pn.note as matched_note, pn.created_at, u.username
+                FROM people p
+                JOIN companies c ON c.id = p.company_id
+                JOIN person_notes pn ON pn.person_id = p.id
+                JOIN users u ON u.id = pn.user_id
+                WHERE pn.note ILIKE %s
+                ORDER BY p.name
+            """, (f"%{q}%",))
+        else:
+            cursor.execute("""
+                SELECT DISTINCT p.id, p.name, p.role, p.phones, p.emails,
+                    c.name as company_name,
+                    pn.note as matched_note, pn.created_at, u.username
+                FROM people p
+                JOIN companies c ON c.id = p.company_id
+                JOIN person_notes pn ON pn.person_id = p.id
+                JOIN users u ON u.id = pn.user_id
+                WHERE pn.note ILIKE %s AND pn.visibility = 'all'
+                ORDER BY p.name
+            """, (f"%{q}%",))
     elif field == "people":
         cursor.execute("""
             SELECT p.id, p.name, p.role, p.phones, p.emails,
@@ -1373,10 +1410,13 @@ def api_people_search():
 @app.route("/api/notes/<int:note_id>", methods=["PATCH"])
 @login_required
 def edit_note(note_id):
-    note = (request.json or {}).get("note", "").strip()
+    data = request.json or {}
+    note = data.get("note", "").strip()
+    visibility = data.get("visibility")
+
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM person_notes WHERE id = %s", (note_id,))
+    cursor.execute("SELECT user_id, visibility FROM person_notes WHERE id = %s", (note_id,))
     row = cursor.fetchone()
     if not row:
         close_db(conn)
@@ -1385,10 +1425,11 @@ def edit_note(note_id):
         close_db(conn)
         return jsonify({"error": "not your note"}), 403
     if not note:
-        # empty note = delete
         cursor.execute("DELETE FROM person_notes WHERE id = %s", (note_id,))
     else:
-        cursor.execute("UPDATE person_notes SET note = %s WHERE id = %s", (note, note_id))
+        new_visibility = visibility if visibility and session.get("role") == "admin" else row["visibility"]
+        cursor.execute("UPDATE person_notes SET note = %s, visibility = %s WHERE id = %s",
+                      (note, new_visibility, note_id))
     conn.commit()
     close_db(conn)
     return jsonify({"ok": True, "deleted": not note})
