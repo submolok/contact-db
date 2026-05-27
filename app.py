@@ -982,6 +982,83 @@ def mobile_save():
         "people_saved": len(data.get("people", []))
     })
 
+
+@app.route("/mobile/enrich/<int:company_id>", methods=["POST"])
+@login_required
+def mobile_enrich(company_id):
+    import threading
+    def run():
+        from enrich2 import scrape_website, enrich_company, save_enrichment, is_already_enriched
+        import json
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT websites FROM companies WHERE id = %s", (company_id,))
+        row = cursor.fetchone()
+        cursor.execute("SELECT MIN(emails) as emails FROM people WHERE company_id = %s", (company_id,))
+        people_row = cursor.fetchone()
+        close_db(conn)
+
+        if is_already_enriched(company_id):
+            return
+
+        domain = None
+        if row and row["websites"]:
+            try:
+                websites = json.loads(row["websites"])
+                if isinstance(websites, list) and websites:
+                    domain = websites[0].replace("https://","").replace("http://","").rstrip("/")
+            except: pass
+
+        if not domain and people_row and people_row["emails"]:
+            from enrich2 import extract_domain
+            domain = extract_domain(people_row["emails"])
+
+        if not domain:
+            return
+
+        website_text = scrape_website(domain, "mobile")
+        if not website_text:
+            return
+
+        enrichment = enrich_company(website_text, "mobile")
+        save_enrichment(company_id, domain, enrichment)
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({"ok": True, "started": True})
+
+
+@app.route("/mobile/enrich/<int:company_id>", methods=["GET"])
+@login_required
+def mobile_enrich_status(company_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM enrichment WHERE contact_id = %s", (company_id,))
+        row = cursor.fetchone()
+    except:
+        row = None
+    close_db(conn)
+
+    if not row:
+        return jsonify({"status": "pending"})
+
+    def safe_json(v):
+        if not v: return []
+        try:
+            parsed = json.loads(v)
+            return [i for i in parsed if i] if isinstance(parsed, list) else [parsed]
+        except: return [v]
+
+    return jsonify({
+        "status": "done",
+        "primary_industry": row["primary_industry"],
+        "sub_industry": row["sub_industry"],
+        "company_type": safe_json(row["company_type"]),
+        "products": safe_json(row["products"]),
+        "markets": safe_json(row["markets"]),
+        "domain": row["domain"]
+    })
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Flagged routes
 # ─────────────────────────────────────────────────────────────────────────────

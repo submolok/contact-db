@@ -719,7 +719,48 @@ input[type=file] { display: none; }
 
     <!-- save button -->
     <button class="btn-primary" id="btn-save" onclick="saveCard()">💾 Save to Database</button>
-  </div>
+
+    <!-- enrich button -->
+    <button class="btn-secondary" id="btn-enrich-company" style="display:none;margin-top:8px" onclick="startEnrichment()">⬡ Enrich Company</button>
+
+    <div id="enrich-card" style="display:none;margin-top:12px">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden">
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleEnrichCard()">
+          <div>
+            <div style="font-family:var(--cond);font-weight:700;font-size:1rem;color:var(--text)">Company Enrichment</div>
+            <div style="font-family:var(--mono);font-size:0.58rem;color:var(--text3);letter-spacing:0.1em;text-transform:uppercase" id="enrich-status-label">Running…</div>
+          </div>
+          <span id="enrich-card-arrow" style="color:var(--text3);font-size:0.8rem">▼</span>
+        </div>
+        <div id="enrich-card-body" style="padding:12px 14px">
+          <div id="enrich-loading" style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:0.7rem;color:var(--text3)">
+            <span class="spinner"></span> Scraping and enriching…
+          </div>
+          <div id="enrich-results" style="display:none">
+            <div class="result-field">
+              <div class="result-field-label">Industry</div>
+              <div class="result-field-value" id="enrich-industry"></div>
+            </div>
+            <div class="result-field">
+              <div class="result-field-label">Segment</div>
+              <div class="result-field-value" id="enrich-sub-industry"></div>
+            </div>
+            <div class="result-field">
+              <div class="result-field-label">Company Type</div>
+              <div class="result-field-value" id="enrich-type"></div>
+            </div>
+            <div class="result-field">
+              <div class="result-field-label">Products</div>
+              <div class="result-field-value" id="enrich-products"></div>
+            </div>
+            <div class="result-field">
+              <div class="result-field-label">Markets</div>
+              <div class="result-field-value" id="enrich-markets"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
 </div>
 
@@ -1059,10 +1100,10 @@ async function saveCard() {
     const data = await res.json();
     if (!data.ok) throw new Error('Save failed');
 
-    // store person IDs for note saving
     extractedData._savedPeopleIds = data.people_ids || [];
+    extractedData._savedCompanyId = data.company_id;
 
-    // save any notes that were already typed
+    // save any notes
     const people = extractedData.people || [];
     for (let i = 0; i < people.length; i++) {
       const note = document.getElementById(`note-${i}`)?.value.trim();
@@ -1078,6 +1119,10 @@ async function saveCard() {
 
     btn.textContent = '✓ Saved';
     btn.style.background = 'var(--green)';
+
+    // show enrich button
+    document.getElementById('btn-enrich-company').style.display = 'block';
+
   } catch(e) {
     btn.disabled = false;
     btn.textContent = '💾 Save to Database';
@@ -1098,6 +1143,10 @@ function resetScan() {
   document.getElementById('btn-scan').style.display = 'block';
   document.getElementById('btn-scan').disabled = true;
   document.getElementById('btn-reset').style.display = 'none';
+  clearInterval(enrichPollTimer);
+  document.getElementById('btn-enrich-company').style.display = 'none';
+  document.getElementById('enrich-card').style.display = 'none';
+  extractedData = null;
 }
 
 // ── TASKS ─────────────────────────────────────────────────────────────────
@@ -1581,6 +1630,56 @@ function cancelNotePreview() {
   document.getElementById('person-view-save-note').style.display = 'block';
   document.getElementById('person-view-save-note').disabled = false;
   document.getElementById('person-view-save-note').textContent = '💾 Save Note';
+}
+
+let enrichPollTimer = null;
+
+function toggleEnrichCard() {
+  const body = document.getElementById('enrich-card-body');
+  const arrow = document.getElementById('enrich-card-arrow');
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  arrow.textContent = isOpen ? '▶' : '▼';
+}
+
+async function startEnrichment() {
+  const companyId = extractedData._savedCompanyId;
+  if (!companyId) return;
+
+  document.getElementById('btn-enrich-company').style.display = 'none';
+  document.getElementById('enrich-card').style.display = 'block';
+  document.getElementById('enrich-loading').style.display = 'flex';
+  document.getElementById('enrich-results').style.display = 'none';
+
+  await fetch(`/mobile/enrich/${companyId}`, { method: 'POST' });
+  pollEnrichment(companyId);
+}
+
+function pollEnrichment(companyId) {
+  enrichPollTimer = setInterval(async () => {
+    try {
+      const res = await fetch(`/mobile/enrich/${companyId}`);
+      const data = await res.json();
+      if (data.status === 'done') {
+        clearInterval(enrichPollTimer);
+        showEnrichResults(data);
+      }
+    } catch(e) {
+      clearInterval(enrichPollTimer);
+    }
+  }, 3000);
+}
+
+function showEnrichResults(data) {
+  document.getElementById('enrich-loading').style.display = 'none';
+  document.getElementById('enrich-results').style.display = 'block';
+  document.getElementById('enrich-status-label').textContent = 'Complete';
+
+  document.getElementById('enrich-industry').textContent = data.primary_industry || '—';
+  document.getElementById('enrich-sub-industry').textContent = data.sub_industry || '—';
+  document.getElementById('enrich-type').textContent = (data.company_type || []).join(', ') || '—';
+  document.getElementById('enrich-products').textContent = (data.products || []).slice(0, 8).join(', ') || '—';
+  document.getElementById('enrich-markets').textContent = (data.markets || []).join(', ') || '—';
 }
 
 // close dropdown when tapping outside
