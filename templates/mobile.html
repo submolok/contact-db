@@ -886,6 +886,17 @@ input[type=file] { display: none; }
         </div>
         <div class="result-field">
           <div class="result-field-label">Notes</div>
+          <div style="display:flex;justify-content:flex-end;gap:6px;margin-bottom:8px">
+            <select id="filter-author" onchange="applyNotesFilter()" style="background:var(--bg2);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.6rem;padding:4px 8px;border-radius:3px;outline:none">
+              <option value="">All Authors</option>
+            </select>
+            <select id="filter-visibility" onchange="applyNotesFilter()" style="display:none;background:var(--bg2);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.6rem;padding:4px 8px;border-radius:3px;outline:none">
+              <option value="">All Notes</option>
+              <option value="all">Visible to all</option>
+              <option value="admin">Admin only</option>
+            </select>
+          </div>
+          <div id="access-request-wrap" style="display:none;margin-bottom:10px"></div>
           <div id="person-notes-list" style="margin-bottom:12px"></div>
           <div class="voice-note-controls">
             <button class="btn-mic" id="mic-person-view" onclick="toggleMicPersonView()">🎙</button>
@@ -935,6 +946,8 @@ const images = { front: null, back: null }; // { file, dataUrl }
 let extractedData = null;
 let taskStatusFilter = '';
 let currentUsername = '';
+let currentPersonNotes = [];
+let currentRole = '';
 
 // ── TABS ──────────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(btn => {
@@ -1464,6 +1477,10 @@ async function openPersonView(person) {
   const emails = person.emails || [];
   const phones = person.phones || [];
 
+  document.getElementById('filter-author').value = '';
+  const filterVis = document.getElementById('filter-visibility');
+  if (filterVis) filterVis.value = '';
+
   document.getElementById('person-view-email-wrap').style.display = emails.length ? 'block' : 'none';
   document.getElementById('person-view-emails').innerHTML = emails.map(e =>
     `<a href="mailto:${esc(e)}" style="color:var(--blue);display:block">${esc(e)}</a>`
@@ -1482,6 +1499,10 @@ async function openPersonView(person) {
   document.getElementById('contacts-list-view').style.display = 'none';
   document.getElementById('contacts-person-view').style.display = 'block';
 
+  if (currentRole !== 'admin') {
+    checkAccessRequestStatus(person.id);
+  }
+
   loadPersonNotes(person.id);
 }
 
@@ -1489,8 +1510,11 @@ async function loadPersonNotes(personId) {
   try {
     const res = await fetch(`/api/people/${personId}/notes`);
     const data = await res.json();
+    console.log('notes response:', data);  // add this
+    currentPersonNotes = data.notes;
     renderPersonNotes(data.notes, data.hidden_count);
   } catch(e) {
+    console.log('notes error:', e);  // add this
     document.getElementById('person-notes-list').innerHTML =
       '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--red)">Error loading notes</div>';
   }
@@ -1499,8 +1523,9 @@ async function loadPersonNotes(personId) {
 
 function renderPersonNotes(notes, hiddenCount) {
   const container = document.getElementById('person-notes-list');
-  let html = '';
+  populateAuthorFilter(notes);
 
+  let html = '';
   if (hiddenCount > 0) {
     html += `
       <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:4px;padding:8px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
@@ -1515,8 +1540,7 @@ function renderPersonNotes(notes, hiddenCount) {
     return;
   }
 
-  html += notes.map(n => renderNoteCard(n, 'person-notes-list', () => loadPersonNotes(currentPersonId))).join('');
-  container.innerHTML = html;
+  container.innerHTML = html + notes.map(n => renderNoteCard(n, 'person-notes-list', () => loadPersonNotes(currentPersonId))).join('');
 }
 
 function backToContacts() {
@@ -1526,6 +1550,7 @@ function backToContacts() {
   currentPersonId = null;
   document.getElementById('contacts-person-view').style.display = 'none';
   document.getElementById('contacts-list-view').style.display = 'block';
+  document.getElementById('access-request-wrap').style.display = 'none';
 }
 
 async function savePersonViewNote() {
@@ -1698,8 +1723,11 @@ async function initAuth() {
   const me = await res.json();
   if (!me.logged_in) { window.location.href = '/login'; return; }
   currentUsername = me.username;
+  currentRole = me.role;
   if (me.role === 'admin') {
     document.getElementById('visibility-select-wrap').style.display = 'block';
+    const filterVis = document.getElementById('filter-visibility');
+    if (filterVis) filterVis.style.display = 'block';
   }
 }
 initAuth();
@@ -1929,6 +1957,97 @@ function toggleTheme() {
   const btn = document.getElementById('theme-btn');
   if (btn) btn.textContent = saved === 'dark' ? '☀' : '🌙';
 })();
+
+function populateAuthorFilter(notes) {
+  const select = document.getElementById('filter-author');
+  const current = select.value;
+  const authors = [...new Set(notes.map(n => n.username))].sort();
+  select.innerHTML = '<option value="">All Authors</option>' +
+    authors.map(a => `<option value="${esc(a)}" ${a === current ? 'selected' : ''}>${esc(a)}</option>`).join('');
+}
+
+function applyNotesFilter() {
+  const author = document.getElementById('filter-author').value;
+  const visibility = document.getElementById('filter-visibility')?.value || '';
+
+  let filtered = currentPersonNotes;
+  if (author) filtered = filtered.filter(n => n.username === author);
+  if (visibility) filtered = filtered.filter(n => n.visibility === visibility);
+
+  const container = document.getElementById('person-notes-list');
+  if (!filtered.length) {
+    container.innerHTML = '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--text3)">No notes match the filter.</div>';
+    return;
+  }
+  container.innerHTML = filtered.map(n => renderNoteCard(n, 'person-notes-list', () => loadPersonNotes(currentPersonId))).join('');
+}
+
+// ── ACCESS REQUESTS ───────────────────────────────────────────────────────
+async function checkAccessRequestStatus(personId) {
+  const wrap = document.getElementById('access-request-wrap');
+  wrap.style.display = 'none';
+
+  try {
+    const res = await fetch(`/api/people/${personId}/access-request`);
+    const data = await res.json();
+
+    // check if there are hidden notes worth requesting
+    const notesRes = await fetch(`/api/people/${personId}/notes`);
+    const notesData = await notesRes.json();
+    console.log('hidden count:', notesData.hidden_count);
+
+    if (notesData.hidden_count === 0) return; // nothing to request
+
+    wrap.style.display = 'block';
+
+    if (data.status === 'none' || data.status === 'denied') {
+      wrap.innerHTML = `
+        <button onclick="requestNoteAccess(${personId})" style="width:100%;padding:8px;background:none;border:1px solid var(--amber-dim);color:var(--amber);border-radius:3px;font-family:var(--mono);font-size:0.68rem;letter-spacing:0.08em;cursor:pointer;transition:all 0.15s">
+          ${data.status === 'denied' ? '✕ Denied — Request Again' : '🔓 Request Access to Hidden Notes'}
+        </button>
+      `;
+    } else if (data.status === 'pending') {
+      wrap.innerHTML = `
+        <div style="width:100%;padding:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:3px;font-family:var(--mono);font-size:0.68rem;color:var(--text3);text-align:center;letter-spacing:0.08em">
+          ⏳ Access Requested
+        </div>
+      `;
+    } else if (data.status === 'approved') {
+      // check if there are still hidden notes
+      const notesRes = await fetch(`/api/people/${personId}/notes`);
+      const notesData = await notesRes.json();
+      
+      if (notesData.hidden_count > 0) {
+        wrap.innerHTML = `
+          <div style="margin-bottom:6px;width:100%;padding:8px;background:rgba(76,175,116,0.1);border:1px solid rgba(76,175,116,0.3);border-radius:3px;font-family:var(--mono);font-size:0.68rem;color:var(--green);text-align:center;letter-spacing:0.08em">
+            ✓ Access Granted
+          </div>
+          <button onclick="requestNoteAccess(${personId})" style="width:100%;padding:8px;background:none;border:1px solid var(--amber-dim);color:var(--amber);border-radius:3px;font-family:var(--mono);font-size:0.68rem;letter-spacing:0.08em;cursor:pointer">
+            🔓 Request Access to More Notes
+          </button>
+        `;
+      } else {
+        wrap.innerHTML = `
+          <div style="width:100%;padding:8px;background:rgba(76,175,116,0.1);border:1px solid rgba(76,175,116,0.3);border-radius:3px;font-family:var(--mono);font-size:0.68rem;color:var(--green);text-align:center;letter-spacing:0.08em">
+            ✓ Access Granted
+          </div>
+        `;
+     }
+    }
+  } catch(e) {}
+}
+
+async function requestNoteAccess(personId) {
+  try {
+    await fetch(`/api/people/${personId}/access-request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    setTimeout(() => checkAccessRequestStatus(personId), 500);
+  } catch(e) {
+    alert('Error: ' + e.message);
+  }
+}
 
 // ── UTILS ─────────────────────────────────────────────────────────────────
 function esc(s) {

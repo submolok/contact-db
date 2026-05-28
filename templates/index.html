@@ -2730,10 +2730,7 @@ async function togglePersonNotes(personId, labelEl) {
       `;
     }
 
-    if (!notes.length && !hiddenCount) {
-      container.innerHTML = '<span style="font-family:var(--mono);font-size:0.65rem;color:var(--text3)">No notes yet.</span>';
-    } else {
-      container.innerHTML = html + notes.map(n => renderNoteCard(n)).join('') + `
+    const addNoteBtn = `
         <div id="add-note-wrap-${personId}" style="margin-top:8px">
           <button onclick="showAddNote(${personId})" id="btn-add-note-${personId}" style="background:none;border:1px solid var(--border2);color:var(--text3);font-family:var(--mono);font-size:0.6rem;padding:4px 10px;border-radius:2px;cursor:pointer;letter-spacing:0.08em;transition:all 0.15s" onmouseover="this.style.color='var(--amber)';this.style.borderColor='var(--amber-dim)'" onmouseout="this.style.color='var(--text3)';this.style.borderColor='var(--border2)'">+ Add Note</button>
           <div id="add-note-form-${personId}" style="display:none;margin-top:8px">
@@ -2750,6 +2747,11 @@ async function togglePersonNotes(personId, labelEl) {
           </div>
         </div>
       `;
+
+      if (!notes.length && !hiddenCount) {
+        container.innerHTML = '<span style="font-family:var(--mono);font-size:0.65rem;color:var(--text3)">No notes yet.</span>' + addNoteBtn;
+      } else {
+        container.innerHTML = html + notes.map(n => renderNoteCard(n)).join('') + addNoteBtn;
     }
   } catch(e) {
     container.innerHTML = '<span style="font-family:var(--mono);font-size:0.65rem;color:var(--red)">Error loading notes</span>';

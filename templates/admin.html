@@ -256,6 +256,62 @@ html, body {
 }
 .role-admin { background: rgba(245,166,35,0.12); color: var(--amber); border: 1px solid rgba(245,166,35,0.25); }
 .role-user { background: rgba(139,147,166,0.1); color: var(--text3); border: 1px solid var(--border2); }
+.admin-tab {
+  padding: 8px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text3);
+  font-family: var(--cond);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  position: relative;
+  top: 1px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.admin-tab:hover { color: var(--text2); }
+.admin-tab.active { color: var(--amber); border-bottom-color: var(--amber); }
+
+.request-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.request-card-header {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.request-card-header:hover { background: var(--bg3); }
+.request-card-body {
+  display: none;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+}
+.request-card-body.open { display: block; }
+.note-select-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.note-select-item:hover { border-color: var(--border2); }
+.note-select-item.selected { border-color: var(--amber-dim); background: rgba(245,166,35,0.05); }
+.note-select-item input { accent-color: var(--amber); flex-shrink: 0; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -274,67 +330,99 @@ html, body {
 
 <div class="page">
   <div class="page-title">Admin Panel</div>
+  <div style="display:flex;gap:0;margin-bottom:24px;border-bottom:1px solid var(--border)">
+    <button class="admin-tab active" data-section="users" onclick="switchAdminTab('users')">Users</button>
+    <button class="admin-tab" data-section="requests" onclick="switchAdminTab('requests')">
+      Access Requests
+      <span id="request-badge" style="display:none;background:var(--red);color:#fff;font-family:var(--mono);font-size:0.55rem;padding:1px 5px;border-radius:8px;margin-left:6px">0</span>
+    </button>
+  </div>
   <div class="page-sub">USER MANAGEMENT</div>
 
-  <!-- create user -->
-  <div class="card">
-    <div class="card-header">
-      <div class="card-title">Create User</div>
-    </div>
-    <div class="card-body">
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Username</label>
-          <input class="form-input" type="text" id="new-username" placeholder="username">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <input class="form-input" type="password" id="new-password" placeholder="••••••••">
-        </div>
-        <div class="form-group" style="flex:0;min-width:120px">
-          <label class="form-label">Role</label>
-          <select class="form-select" id="new-role">
-            <option value="user">User</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-        <button class="btn btn-primary" onclick="createUser()" style="height:36px;align-self:flex-end">Create</button>
+  <div id="section-users">
+    <!-- create user -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Create User</div>
       </div>
-      <div class="status-msg" id="create-status"></div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Username</label>
+            <input class="form-input" type="text" id="new-username" placeholder="username">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password</label>
+            <input class="form-input" type="password" id="new-password" placeholder="••••••••">
+          </div>
+          <div class="form-group" style="flex:0;min-width:120px">
+            <label class="form-label">Role</label>
+            <select class="form-select" id="new-role">
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="createUser()" style="height:36px;align-self:flex-end">Create</button>
+        </div>
+        <div class="status-msg" id="create-status"></div>
+      </div>
+    </div>
+
+    <!-- user list -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Users</div>
+        <span id="user-count" style="font-family:var(--mono);font-size:0.62rem;color:var(--text3)"></span>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table class="user-table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="user-list">
+            <tr><td colspan="4" style="text-align:center;color:var(--text3);font-family:var(--mono);font-size:0.72rem;padding:24px">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
-  <!-- user list -->
-  <div class="card">
-    <div class="card-header">
-      <div class="card-title">Users</div>
-      <span id="user-count" style="font-family:var(--mono);font-size:0.62rem;color:var(--text3)"></span>
-    </div>
-    <div class="card-body" style="padding:0">
-      <table class="user-table">
-        <thead>
-          <tr>
-            <th>Username</th>
-            <th>Role</th>
-            <th>Created</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="user-list">
-          <tr><td colspan="4" style="text-align:center;color:var(--text3);font-family:var(--mono);font-size:0.72rem;padding:24px">Loading…</td></tr>
-        </tbody>
-      </table>
+  <!-- ACCESS REQUESTS SECTION -->
+  <div id="section-requests" style="display:none">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Pending Access Requests</div>
+        <span id="request-count" style="font-family:var(--mono);font-size:0.62rem;color:var(--text3)"></span>
+      </div>
+      <div class="card-body" id="requests-list">
+        <div style="text-align:center;padding:24px;color:var(--text3);font-family:var(--mono);font-size:0.72rem">Loading…</div>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
+
 async function init() {
   const me = await fetch('/api/auth/me').then(r => r.json());
   if (!me.logged_in) { window.location.href = '/login'; return; }
   if (me.role !== 'admin') { window.location.href = '/'; return; }
   document.getElementById('current-user').textContent = me.username.toUpperCase();
   loadUsers();
+  
+  // check for pending requests to show badge
+  const res = await fetch('/api/admin/access-requests');
+  const requests = await res.json();
+  if (requests.length > 0) {
+    const badge = document.getElementById('request-badge');
+    badge.textContent = requests.length;
+    badge.style.display = 'inline';
+  }
 }
 
 async function loadUsers() {
@@ -409,6 +497,134 @@ function showStatus(id, type, msg) {
   el.textContent = msg;
   el.style.display = 'block';
   setTimeout(() => el.style.display = 'none', 3000);
+}
+
+function switchAdminTab(section) {
+  document.querySelectorAll('.admin-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.section === section);
+  });
+  document.getElementById('section-users').style.display = section === 'users' ? 'block' : 'none';
+  document.getElementById('section-requests').style.display = section === 'requests' ? 'block' : 'none';
+  if (section === 'requests') loadAccessRequests();
+}
+
+async function loadAccessRequests() {
+  const container = document.getElementById('requests-list');
+  container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3);font-family:var(--mono);font-size:0.72rem">Loading…</div>';
+
+  const res = await fetch('/api/admin/access-requests');
+  const requests = await res.json();
+
+  document.getElementById('request-count').textContent = `${requests.length} pending`;
+  const badge = document.getElementById('request-badge');
+  if (requests.length > 0) {
+    badge.textContent = requests.length;
+    badge.style.display = 'inline';
+  } else {
+    badge.style.display = 'none';
+  }
+
+  if (!requests.length) {
+    container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3);font-family:var(--mono);font-size:0.72rem">No pending requests.</div>';
+    return;
+  }
+
+  container.innerHTML = requests.map(r => `
+    <div class="request-card" id="req-${r.id}">
+      <div class="request-card-header" onclick="toggleRequest(${r.id}, ${r.person_id})">
+        <div>
+          <div style="font-family:var(--cond);font-weight:700;font-size:1rem;color:var(--text)">${esc(r.requester)}</div>
+          <div style="font-family:var(--mono);font-size:0.62rem;color:var(--text3);margin-top:2px">
+            Requesting access to <span style="color:var(--blue)">${esc(r.person_name)}</span> · ${esc(r.company_name)}
+          </div>
+          <div style="font-family:var(--mono);font-size:0.58rem;color:var(--text3);margin-top:2px">${r.created_at.split('T')[0]}</div>
+        </div>
+        <span style="color:var(--text3);font-size:0.8rem" id="req-arrow-${r.id}">▶</span>
+      </div>
+      <div class="request-card-body" id="req-body-${r.id}">
+        <div style="font-family:var(--mono);font-size:0.6rem;color:var(--text3);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:10px">Select notes to share</div>
+        <div id="req-notes-${r.id}">
+          <div style="color:var(--text3);font-family:var(--mono);font-size:0.7rem">Loading notes…</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button onclick="resolveRequest(${r.id}, 'approve')" class="btn btn-primary" style="flex:1">✓ Approve</button>
+          <button onclick="resolveRequest(${r.id}, 'deny')" class="btn btn-danger" style="flex:1;border:1px solid rgba(224,90,78,0.3)">✕ Deny</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function toggleRequest(requestId, personId) {
+  const body = document.getElementById(`req-body-${requestId}`);
+  const arrow = document.getElementById(`req-arrow-${requestId}`);
+  const isOpen = body.classList.contains('open');
+
+  if (isOpen) {
+    body.classList.remove('open');
+    arrow.textContent = '▶';
+    return;
+  }
+
+  body.classList.add('open');
+  arrow.textContent = '▼';
+
+  // load admin notes for this person
+  const notesContainer = document.getElementById(`req-notes-${requestId}`);
+  const res = await fetch(`/api/admin/access-requests/${requestId}/notes`);
+  const notes = await res.json();
+
+  if (!notes.length) {
+    notesContainer.innerHTML = '<div style="color:var(--text3);font-family:var(--mono);font-size:0.7rem">No admin notes for this person.</div>';
+    return;
+  }
+
+  notesContainer.innerHTML = notes.map(n => `
+    <div class="note-select-item" id="note-item-${requestId}-${n.id}" onclick="toggleNoteSelect(${requestId}, ${n.id})">
+      <input type="checkbox" id="note-check-${requestId}-${n.id}" onclick="event.stopPropagation()">
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="font-family:var(--mono);font-size:0.6rem;color:var(--amber)">${esc(n.username)}</span>
+          <span style="font-family:var(--mono);font-size:0.58rem;color:var(--text3)">${n.created_at.split('T')[0]}</span>
+        </div>
+        <div style="font-size:0.82rem;color:var(--text2);line-height:1.4">${esc(n.note)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function toggleNoteSelect(requestId, noteId) {
+  const item = document.getElementById(`note-item-${requestId}-${noteId}`);
+  const checkbox = document.getElementById(`note-check-${requestId}-${noteId}`);
+  checkbox.checked = !checkbox.checked;
+  item.classList.toggle('selected', checkbox.checked);
+}
+
+async function resolveRequest(requestId, action) {
+  const noteIds = action === 'approve'
+    ? [...document.querySelectorAll(`[id^="note-check-${requestId}-"]`)]
+        .filter(cb => cb.checked)
+        .map(cb => parseInt(cb.id.split('-').pop()))
+    : [];
+
+  if (action === 'approve' && noteIds.length === 0) {
+    alert('Please select at least one note to share.');
+    return;
+  }
+
+  const res = await fetch(`/api/admin/access-requests/${requestId}/resolve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, note_ids: noteIds })
+  });
+
+  if (!res.ok) {
+    alert('Error resolving request');
+    return;
+  }
+
+  document.getElementById(`req-${requestId}`).remove();
+  loadAccessRequests();
 }
 
 function esc(s) {

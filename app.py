@@ -1276,6 +1276,7 @@ def get_person_notes(person_id):
     conn = get_db()
     cursor = conn.cursor()
     role = session.get("role")
+    user_id = session["user_id"]
 
     if role == "admin":
         cursor.execute("""
@@ -1288,19 +1289,28 @@ def get_person_notes(person_id):
         notes = [dict(r) for r in cursor.fetchall()]
         hidden_count = 0
     else:
+        # get granted note ids for this user and person
+        cursor.execute("""
+            SELECT g.note_id FROM note_access_grants g
+            JOIN note_access_requests r ON r.id = g.request_id
+            WHERE r.requester_id = %s AND r.person_id = %s AND r.status = 'approved'
+        """, (user_id, person_id))
+        granted_ids = [r["note_id"] for r in cursor.fetchall()]
+
         cursor.execute("""
             SELECT pn.id, pn.note, pn.created_at, pn.visibility, u.username
             FROM person_notes pn
             JOIN users u ON u.id = pn.user_id
-            WHERE pn.person_id = %s AND pn.visibility = 'all'
+            WHERE pn.person_id = %s AND (pn.visibility = 'all' OR pn.id = ANY(%s))
             ORDER BY pn.created_at DESC
-        """, (person_id,))
+        """, (person_id, granted_ids or [0]))
         notes = [dict(r) for r in cursor.fetchall()]
 
         cursor.execute("""
             SELECT COUNT(*) as count FROM person_notes
             WHERE person_id = %s AND visibility = 'admin'
-        """, (person_id,))
+            AND id != ALL(%s)
+        """, (person_id, granted_ids or [0]))
         hidden_count = cursor.fetchone()["count"]
 
     close_db(conn)
@@ -1425,6 +1435,7 @@ def edit_note(note_id):
         close_db(conn)
         return jsonify({"error": "not your note"}), 403
     if not note:
+        cursor.execute("DELETE FROM note_access_grants WHERE note_id = %s", (note_id,))
         cursor.execute("DELETE FROM person_notes WHERE id = %s", (note_id,))
     else:
         new_visibility = visibility if visibility and session.get("role") == "admin" else row["visibility"]
@@ -1546,6 +1557,150 @@ def pipeline_output(job_id):
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Access requests
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/people/<int:person_id>/access-request", methods=["POST"])
+@login_required
+def request_access(person_id):
+    user_id = session["user_id"]
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT id, status FROM note_access_requests
+        WHERE requester_id = %s AND person_id = %s AND status = 'pending'
+    """, (user_id, person_id))
+    existing = cursor.fetchone()
+    if existing:
+        close_db(conn)
+        return jsonify({"error": "already requested"}), 409
+
+    cursor.execute("""
+        INSERT INTO note_access_requests (requester_id, person_id, status, created_at)
+        VALUES (%s, %s, 'pending', %s)
+    """, (user_id, person_id, datetime.now().isoformat()))
+    conn.commit()
+    close_db(conn)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/people/<int:person_id>/access-request", methods=["GET"])
+@login_required
+def get_access_request_status(person_id):
+    user_id = session["user_id"]
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT r.id, r.status,
+            ARRAY_AGG(g.note_id) FILTER (WHERE g.note_id IS NOT NULL) as granted_note_ids
+        FROM note_access_requests r
+        LEFT JOIN note_access_grants g ON g.request_id = r.id
+        WHERE r.requester_id = %s AND r.person_id = %s
+        GROUP BY r.id, r.status
+        ORDER BY r.created_at DESC
+        LIMIT 1
+    """, (user_id, person_id))
+    row = cursor.fetchone()
+    close_db(conn)
+
+    if not row or not row["id"]:
+        return jsonify({"status": "none"})
+
+    return jsonify({
+        "status": row["status"],
+        "request_id": row["id"],
+        "granted_note_ids": row["granted_note_ids"] or []
+    })
+
+
+@app.route("/api/admin/access-requests", methods=["GET"])
+@admin_required
+def get_access_requests():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT r.id, r.status, r.created_at, r.person_id,
+               u.username as requester,
+               p.name as person_name,
+               c.name as company_name
+        FROM note_access_requests r
+        JOIN users u ON u.id = r.requester_id
+        JOIN people p ON p.id = r.person_id
+        JOIN companies c ON c.id = p.company_id
+        WHERE r.status = 'pending'
+        ORDER BY r.created_at DESC
+    """)
+    rows = cursor.fetchall()
+    close_db(conn)
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/admin/access-requests/<int:request_id>/notes", methods=["GET"])
+@admin_required
+def get_request_notes(request_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT person_id, requester_id FROM note_access_requests WHERE id = %s", (request_id,))
+    row = cursor.fetchone()
+    if not row:
+        close_db(conn)
+        return jsonify({"error": "not found"}), 404
+
+    # get note ids already granted to this specific requester for this person
+    cursor.execute("""
+        SELECT g.note_id FROM note_access_grants g
+        JOIN note_access_requests r ON r.id = g.request_id
+        WHERE r.requester_id = %s AND r.person_id = %s AND r.status = 'approved'
+    """, (row["requester_id"], row["person_id"]))
+    already_granted = [r["note_id"] for r in cursor.fetchall()]
+
+    cursor.execute("""
+        SELECT pn.id, pn.note, pn.created_at, pn.visibility, u.username
+        FROM person_notes pn
+        JOIN users u ON u.id = pn.user_id
+        WHERE pn.person_id = %s AND pn.visibility = 'admin'
+        AND pn.id != ALL(%s)
+        ORDER BY pn.created_at DESC
+    """, (row["person_id"], already_granted or [0]))
+    notes = cursor.fetchall()
+    close_db(conn)
+    return jsonify([dict(n) for n in notes])
+
+
+@app.route("/api/admin/access-requests/<int:request_id>/resolve", methods=["POST"])
+@admin_required
+def resolve_access_request(request_id):
+    data = request.json or {}
+    action = data.get("action")  # "approve" or "deny"
+    note_ids = data.get("note_ids", [])
+
+    if action not in ("approve", "deny"):
+        return jsonify({"error": "invalid action"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    status = "approved" if action == "approve" else "denied"
+    cursor.execute("""
+        UPDATE note_access_requests
+        SET status = %s, resolved_at = %s
+        WHERE id = %s
+    """, (status, datetime.now().isoformat(), request_id))
+
+    if action == "approve" and note_ids:
+        for note_id in note_ids:
+            cursor.execute("""
+                INSERT INTO note_access_grants (request_id, note_id)
+                VALUES (%s, %s)
+            """, (request_id, note_id))
+
+    conn.commit()
+    close_db(conn)
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
