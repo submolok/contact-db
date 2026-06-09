@@ -1727,7 +1727,15 @@ async function startEnrichment() {
 }
 
 function pollEnrichment(companyId) {
+  let attempts = 0;
   enrichPollTimer = setInterval(async () => {
+    attempts++;
+    if (attempts > 20) {  // stop after ~60 seconds
+      clearInterval(enrichPollTimer);
+      document.getElementById('enrich-status-label').textContent = 'Could not enrich';
+      document.getElementById('enrich-loading').style.display = 'none';
+      return;
+    }
     try {
       const res = await fetch(`/mobile/enrich/${companyId}`);
       const data = await res.json();
