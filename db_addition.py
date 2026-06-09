@@ -203,11 +203,13 @@ def save_company(data: dict, source_folder: str) -> int | None:
         merged_websites     = _merge_json_lists(existing["websites"],    company.get("websites"))
         merged_company_info = _merge_text(existing["company_info"],      company.get("company_info"))
         merged_additional   = _merge_text(existing["additional_info"],   company.get("additional_info"))
+        merged_emails = _merge_json_lists(existing["emails"], company.get("emails"))
 
         cursor.execute("""
             UPDATE companies
             SET addresses       = %s,
                 phones          = %s,
+                emails          = %s,
                 websites        = %s,
                 company_info    = %s,
                 additional_info = %s
@@ -215,6 +217,7 @@ def save_company(data: dict, source_folder: str) -> int | None:
         """, (
             merged_addresses,
             merged_phones,
+            merged_emails,
             merged_websites,
             merged_company_info,
             merged_additional,
@@ -224,13 +227,14 @@ def save_company(data: dict, source_folder: str) -> int | None:
 
     else:
         cursor.execute("""
-            INSERT INTO companies (name, addresses, phones, websites, company_info, additional_info, source_folder)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO companies (name, addresses, phones, emails, websites, company_info, additional_info, source_folder)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             name or company.get("name"),
             normalize(company.get("addresses")),
             normalize(company.get("phones")),
+            normalize(company.get("emails")),
             normalize(company.get("websites")),
             company.get("company_info"),
             company.get("additional_info"),

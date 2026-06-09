@@ -1815,6 +1815,8 @@ async function loadExpandRow(id) {
       ${(company.phones||[]).length ? `
       <div class="expand-label" style="margin-top:8px">Company Phones</div>
       <div style="font-family:var(--mono);font-size:.7rem;color:var(--text2)">${(company.phones||[]).join(' · ')}</div>` : ''}
+      ${(company.emails||[]).length ? `<div class="expand-label" style="margin-top:8px">Company Emails</div>
+      <div>${(company.emails||[]).map(e =>`<a href="mailto:${escHtml(e)}" style="display:block;font-family:var(--mono);font-size:.7rem;color:var(--blue)">${escHtml(e)}</a>`).join('')}</div>` : ''}
     </div>
   `;
 }

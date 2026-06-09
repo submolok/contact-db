@@ -59,8 +59,11 @@ def read_business_card_bytes(images: list[tuple[bytes, str]], run_id: str) -> di
 Some images are fronts (contain a person's name and contact details),
 some are backs (contain company address, phone, or product info).
 Extract and return a JSON object with two keys:
-- "company": object with fields: name, addresses (list), websites (list), phones (list), company_info, additional_info
+- "company": object with fields: name, addresses (list), websites (list), phones (list), emails (list), company_info, additional_info
 - "people": list of objects each with: name, role, phones (list), emails (list)
+
+- If an email appears next to a person's name, assign it to that person's emails list.
+- If an email appears without an associated name (general contact email), assign it to the company emails list.
 
 Backs should contribute to the company record, not to individual people.
 If a field is not present, set it to null.

@@ -79,6 +79,7 @@ def get_companies_filtered(categories=None, industries=None, types=None, search=
             c.name,
             c.addresses,
             c.phones,
+            c.emails,
             c.websites,
             c.company_info,
             c.source_folder,
@@ -578,6 +579,7 @@ def api_companies():
             "categories": sorted(cats_list),
             "websites": safe_json(r["websites"]),
             "phones": safe_json(r["phones"]),
+            "emails": safe_json(r["emails"]),
             "addresses": safe_json(r["addresses"]),
             "notes": r["notes"] or "",
         })
