@@ -1,4 +1,3 @@
-import csv
 import io
 import json
 import os
@@ -9,7 +8,7 @@ import subprocess
 import threading
 import time
 import uuid
-import zipfile
+import openpyxl
 from collections import defaultdict
 from pathlib import Path
 from datetime import datetime, timezone
@@ -555,25 +554,28 @@ def api_export_db():
         ("tasks",              "SELECT * FROM tasks ORDER BY id"),
     ]
 
-    zip_buf = io.BytesIO()
-    with db_ctx() as (_, cur):
-        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for table_name, query in TABLES:
-                cur.execute(query)
-                rows = cur.fetchall()
-                csv_buf = io.StringIO()
-                if rows:
-                    writer = csv.DictWriter(csv_buf, fieldnames=rows[0].keys())
-                    writer.writeheader()
-                    writer.writerows(rows)
-                zf.writestr(f"{table_name}.csv", csv_buf.getvalue())
+    wb = openpyxl.Workbook()
+    if wb.active is not None:
+        wb.remove(wb.active)
 
-    zip_buf.seek(0)
+    with db_ctx() as (_, cur):
+        for table_name, query in TABLES:
+            cur.execute(query)
+            rows = cur.fetchall()
+            ws = wb.create_sheet(title=table_name)
+            if rows:
+                ws.append(list(rows[0].keys()))
+                for row in rows:
+                    ws.append(list(row.values()))
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"yantralive_export_{timestamp}.zip"
+    filename = f"yantralive_export_{timestamp}.xlsx"
     return Response(
-        zip_buf.read(),
-        mimetype="application/zip",
+        buf.read(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
