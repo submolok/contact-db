@@ -4,3 +4,4 @@ firecrawl-py
 python-dotenv
 requests
 gunicorn
+psycopg2-binary
