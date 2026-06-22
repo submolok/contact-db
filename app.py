@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import os
 import psycopg2         # replace with sqlite3 if needed
@@ -7,9 +9,10 @@ import subprocess
 import threading
 import time
 import uuid
+import zipfile
 from collections import defaultdict
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 import sys
 from flask import session, redirect, url_for
@@ -515,6 +518,42 @@ def api_delete_user(user_id):
     conn.commit()
     close_db(conn)
     return jsonify({"ok": True})
+
+@app.route("/api/admin/export", methods=["GET"])
+@admin_required
+def api_export_db():
+    TABLES = [
+        ("companies",          "SELECT * FROM companies ORDER BY id"),
+        ("people",             "SELECT * FROM people ORDER BY id"),
+        ("enrichment",         "SELECT * FROM enrichment ORDER BY id"),
+        ("company_categories", "SELECT * FROM company_categories ORDER BY id"),
+        ("tasks",              "SELECT * FROM tasks ORDER BY id"),
+    ]
+
+    conn = get_db()
+    cursor = conn.cursor()
+    zip_buf = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for table_name, query in TABLES:
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            csv_buf = io.StringIO()
+            if rows:
+                writer = csv.DictWriter(csv_buf, fieldnames=rows[0].keys())
+                writer.writeheader()
+                writer.writerows(rows)
+            zf.writestr(f"{table_name}.csv", csv_buf.getvalue())
+
+    close_db(conn)
+    zip_buf.seek(0)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    filename = f"yantralive_export_{timestamp}.zip"
+    return Response(
+        zip_buf.read(),
+        mimetype="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Routes
