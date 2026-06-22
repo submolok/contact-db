@@ -436,7 +436,7 @@ def admin_required(f):
     def decorated(*args, **kwargs):
         if "user_id" not in session:
             return redirect(url_for("login_page"))
-        if session.get("role") != "admin":
+        if session.get("role") not in ("admin", "superadmin"):
             return jsonify({"error": "admin only"}), 403
         return f(*args, **kwargs)
     return decorated
@@ -507,6 +507,9 @@ def api_create_user():
     if not username or not password:
         return jsonify({"error": "username and password required"}), 400
 
+    if role == "superadmin":
+        return jsonify({"error": "superadmin accounts cannot be created from the dashboard"}), 403
+
     try:
         with db_ctx() as (conn, cur):
             cur.execute("""
@@ -525,10 +528,14 @@ def api_delete_user(user_id):
         return jsonify({"error": "You cannot delete your own account"}), 400
 
     with db_ctx() as (conn, cur):
-        cur.execute("SELECT COUNT(*) as count FROM users WHERE role = 'admin'")
-        admin_count = cur.fetchone()["count"]
         cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
         user = cur.fetchone()
+
+        if user and user["role"] == "superadmin":
+            return jsonify({"error": "Superadmin accounts cannot be deleted from the dashboard"}), 403
+
+        cur.execute("SELECT COUNT(*) as count FROM users WHERE role = 'admin'")
+        admin_count = cur.fetchone()["count"]
 
         if user and user["role"] == "admin" and admin_count <= 1:
             return jsonify({"error": "Cannot delete the last admin account"}), 400
@@ -605,7 +612,7 @@ def api_companies():
         sort_dir=sort_dir,
     )
 
-    is_admin = session.get("role") == "admin"
+    is_admin = session.get("role") in ("admin", "superadmin")
 
     # Fetch visibility settings for all returned companies
     company_ids = [r["id"] for r in rows]
@@ -669,7 +676,7 @@ def api_companies():
 @app.route("/api/company/<int:company_id>/people")
 @login_required
 def api_people(company_id):
-    is_admin = session.get("role") == "admin"
+    is_admin = session.get("role") in ("admin", "superadmin")
 
     hide_employees = False
     hide_contact_info = False
@@ -1348,7 +1355,7 @@ def get_person_notes(person_id):
     user_id = session["user_id"]
 
     with db_ctx() as (_, cur):
-        if role == "admin":
+        if role in ("admin", "superadmin"):
             cur.execute("""
                 SELECT pn.id, pn.note, pn.created_at, pn.visibility, u.username
                 FROM person_notes pn
@@ -1392,7 +1399,7 @@ def save_person_notes(person_id):
     visibility = data.get("visibility", "all")
     if not note:
         return jsonify({"error": "no note provided"}), 400
-    if session.get("role") != "admin":
+    if session.get("role") not in ("admin", "superadmin"):
         visibility = "all"
     with db_ctx() as (conn, cur):
         cur.execute("""
@@ -1412,7 +1419,7 @@ def api_people_search():
 
     with db_ctx() as (_, cur):
         if field == "notes":
-            if session.get("role") == "admin":
+            if session.get("role") in ("admin", "superadmin"):
                 cur.execute("""
                     SELECT DISTINCT p.id, p.name, p.role, p.phones, p.emails,
                         c.name as company_name,
@@ -1491,7 +1498,7 @@ def edit_note(note_id):
             cur.execute("DELETE FROM note_access_grants WHERE note_id = %s", (note_id,))
             cur.execute("DELETE FROM person_notes WHERE id = %s", (note_id,))
         else:
-            new_visibility = visibility if visibility and session.get("role") == "admin" else row["visibility"]
+            new_visibility = visibility if visibility and session.get("role") in ("admin", "superadmin") else row["visibility"]
             cur.execute("UPDATE person_notes SET note = %s, visibility = %s WHERE id = %s",
                         (note, new_visibility, note_id))
         conn.commit()
