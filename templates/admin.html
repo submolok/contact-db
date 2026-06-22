@@ -476,7 +476,7 @@ html, body {
 async function init() {
   const me = await fetch('/api/auth/me').then(r => r.json());
   if (!me.logged_in) { window.location.href = '/login'; return; }
-  if (me.role !== 'admin') { window.location.href = '/'; return; }
+  if (me.role !== 'admin' && me.role !== 'superadmin') { window.location.href = '/'; return; }
   document.getElementById('current-user').textContent = me.username.toUpperCase();
   loadUsers();
   
