@@ -18,6 +18,7 @@ import sys
 from flask import session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
+from contextlib import contextmanager
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -91,10 +92,35 @@ def close_db(conn):
     connection_pool.putconn(conn)
 
 
-def get_companies_filtered(categories=None, industries=None, types=None, search=None, sort_by="name", sort_dir="asc"):
+@contextmanager
+def db_ctx():
+    """Yield (conn, cursor), roll back on exception, always return conn to pool."""
     conn = get_db()
-    cur = conn.cursor()
+    cursor = conn.cursor()
+    try:
+        yield conn, cursor
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        close_db(conn)
 
+
+def safe_json(v):
+    if not v or v == "null":
+        return []
+    try:
+        parsed = json.loads(v)
+        if parsed is None:
+            return []
+        if isinstance(parsed, list):
+            return [i for i in parsed if i is not None]
+        return [parsed]
+    except Exception:
+        return [v]
+
+
+def get_companies_filtered(categories=None, industries=None, types=None, search=None, sort_by="name", sort_dir="asc"):
     sql = """
         SELECT
             c.id AS id,
@@ -136,7 +162,7 @@ def get_companies_filtered(categories=None, industries=None, types=None, search=
         params += [f"%{search}%"] * 5
 
     if industries:
-        placeholders = ",".join("%s" * len(industries))
+        placeholders = ",".join(["%s"] * len(industries))
         sql += f" AND e.primary_industry IN ({placeholders})"
         params += industries
 
@@ -148,9 +174,9 @@ def get_companies_filtered(categories=None, industries=None, types=None, search=
     sql += " GROUP BY c.id, c.name, c.addresses, c.phones, c.websites, c.company_info, c.source_folder, c.notes, e.primary_industry, e.sub_industry, e.company_type, e.products, e.markets, e.domain"
 
     if categories:
-        placeholders = ",".join("%s" * len(categories))
+        placeholders = ",".join(["%s"] * len(categories))
         sql = f"""
-            SELECT sub.id, sub.name, sub.addresses, sub.phones, sub.websites,
+            SELECT sub.id, sub.name, sub.addresses, sub.phones, sub.emails, sub.websites,
                    sub.company_info, sub.source_folder, sub.primary_industry,
                    sub.sub_industry, sub.company_type, sub.products, sub.markets,
                    sub.domain, sub.categories, sub.notes
@@ -169,47 +195,37 @@ def get_companies_filtered(categories=None, industries=None, types=None, search=
     sort_dir = "DESC" if sort_dir == "desc" else "ASC"
     sql += f" ORDER BY {sort_by} {sort_dir}"
 
-    cur.execute(sql, params)
-    rows = cur.fetchall()
-    close_db(conn)
+    with db_ctx() as (_, cur):
+        cur.execute(sql, params)
+        rows = cur.fetchall()
     return rows
 
 
 def get_all_categories():
-    conn = get_db()
-    cur = conn.cursor()
     try:
-        cur.execute("SELECT DISTINCT category FROM company_categories ORDER BY category")
-        return [r["category"] for r in cur.fetchall()]
+        with db_ctx() as (_, cur):
+            cur.execute("SELECT DISTINCT category FROM company_categories ORDER BY category")
+            return [r["category"] for r in cur.fetchall()]
     except Exception:
         return []
-    finally:
-        close_db(conn)
 
 
 def get_all_industries():
-    conn = get_db()
-    cur = conn.cursor()
     try:
-        cur.execute("SELECT DISTINCT primary_industry FROM enrichment WHERE primary_industry IS NOT NULL ORDER BY primary_industry")
-        return [r["primary_industry"] for r in cur.fetchall()]
+        with db_ctx() as (_, cur):
+            cur.execute("SELECT DISTINCT primary_industry FROM enrichment WHERE primary_industry IS NOT NULL ORDER BY primary_industry")
+            return [r["primary_industry"] for r in cur.fetchall()]
     except Exception:
         return []
-    finally:
-        close_db(conn)
 
 
 def get_all_types():
-    """Extract distinct company types from the JSON list stored in enrichment.company_type."""
-    conn = get_db()
-    cur = conn.cursor()
     try:
-        cur.execute("SELECT company_type FROM enrichment WHERE company_type IS NOT NULL")
-        rows = cur.fetchall()
+        with db_ctx() as (_, cur):
+            cur.execute("SELECT company_type FROM enrichment WHERE company_type IS NOT NULL")
+            rows = cur.fetchall()
     except Exception:
         return []
-    finally:
-        close_db(conn)
 
     seen = set()
     for row in rows:
@@ -227,33 +243,28 @@ def get_all_types():
 
 
 def get_stats():
-    conn = get_db()
-    cur = conn.cursor()
-    stats = {}
     try:
-        cur.execute("SELECT COUNT(*) as n FROM companies")
-        stats["companies"] = cur.fetchone()["n"]
-        cur.execute("SELECT COUNT(*) as n FROM people")
-        stats["people"] = cur.fetchone()["n"]
-        cur.execute("SELECT COUNT(*) as n FROM enrichment WHERE domain IS NOT NULL")
-        stats["enriched"] = cur.fetchone()["n"]
-        cur.execute("SELECT COUNT(DISTINCT category) as n FROM company_categories")
-        stats["categories"] = cur.fetchone()["n"]
-        cur.execute("SELECT COUNT(*) as n FROM flagged WHERE status = 'active'")
-        stats["flagged"] = cur.fetchone()["n"]
+        with db_ctx() as (_, cur):
+            cur.execute("SELECT COUNT(*) as n FROM companies")
+            companies = cur.fetchone()["n"]
+            cur.execute("SELECT COUNT(*) as n FROM people")
+            people = cur.fetchone()["n"]
+            cur.execute("SELECT COUNT(*) as n FROM enrichment WHERE domain IS NOT NULL")
+            enriched = cur.fetchone()["n"]
+            cur.execute("SELECT COUNT(DISTINCT category) as n FROM company_categories")
+            categories = cur.fetchone()["n"]
+            cur.execute("SELECT COUNT(*) as n FROM flagged WHERE status = 'active'")
+            flagged = cur.fetchone()["n"]
+        return {"companies": companies, "people": people, "enriched": enriched,
+                "categories": categories, "flagged": flagged}
     except Exception:
-        stats = {"companies": 0, "people": 0, "enriched": 0, "categories": 0, "flagged": 0}
-    close_db(conn)
-    return stats
+        return {"companies": 0, "people": 0, "enriched": 0, "categories": 0, "flagged": 0}
 
 
 def get_people_for_company(company_id):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM people WHERE company_id = %s", (company_id,))
-    rows = cur.fetchall()
-    close_db(conn)
-    return rows
+    with db_ctx() as (_, cur):
+        cur.execute("SELECT * FROM people WHERE company_id = %s", (company_id,))
+        return cur.fetchall()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Taiga helpers
@@ -480,11 +491,9 @@ def admin_page():
 @app.route("/api/admin/users", methods=["GET"])
 @admin_required
 def api_get_users():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, username, role, created_at FROM users ORDER BY created_at DESC")
-    rows = cursor.fetchall()
-    close_db(conn)
+    with db_ctx() as (_, cur):
+        cur.execute("SELECT id, username, role, created_at FROM users ORDER BY created_at DESC")
+        rows = cur.fetchall()
     return jsonify([dict(r) for r in rows])
 
 @app.route("/api/admin/users", methods=["POST"])
@@ -498,44 +507,34 @@ def api_create_user():
     if not username or not password:
         return jsonify({"error": "username and password required"}), 400
 
-    conn = get_db()
-    cursor = conn.cursor()
     try:
-        cursor.execute("""
-            INSERT INTO users (username, password_hash, role, created_at)
-            VALUES (%s, %s, %s, %s)
-        """, (username, generate_password_hash(password), role, datetime.now().isoformat()))
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        close_db(conn)
+        with db_ctx() as (conn, cur):
+            cur.execute("""
+                INSERT INTO users (username, password_hash, role, created_at)
+                VALUES (%s, %s, %s, %s)
+            """, (username, generate_password_hash(password), role, datetime.now().isoformat()))
+            conn.commit()
+    except Exception:
         return jsonify({"error": "username already exists"}), 409
-    close_db(conn)
     return jsonify({"ok": True})
 
 @app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
 @admin_required
 def api_delete_user(user_id):
-    # can't delete yourself
     if user_id == session["user_id"]:
         return jsonify({"error": "You cannot delete your own account"}), 400
 
-    conn = get_db()
-    cursor = conn.cursor()
+    with db_ctx() as (conn, cur):
+        cur.execute("SELECT COUNT(*) as count FROM users WHERE role = 'admin'")
+        admin_count = cur.fetchone()["count"]
+        cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+        user = cur.fetchone()
 
-    # can't delete the last admin
-    cursor.execute("SELECT COUNT(*) as count FROM users WHERE role = 'admin'")
-    admin_count = cursor.fetchone()["count"]
-    cursor.execute("SELECT role FROM users WHERE id = %s", (user_id,))
-    user = cursor.fetchone()
+        if user and user["role"] == "admin" and admin_count <= 1:
+            return jsonify({"error": "Cannot delete the last admin account"}), 400
 
-    if user and user["role"] == "admin" and admin_count <= 1:
-        close_db(conn)
-        return jsonify({"error": "Cannot delete the last admin account"}), 400
-
-    cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
-    conn.commit()
-    close_db(conn)
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        conn.commit()
     return jsonify({"ok": True})
 
 @app.route("/api/admin/export", methods=["GET"])
@@ -549,22 +548,19 @@ def api_export_db():
         ("tasks",              "SELECT * FROM tasks ORDER BY id"),
     ]
 
-    conn = get_db()
-    cursor = conn.cursor()
     zip_buf = io.BytesIO()
+    with db_ctx() as (_, cur):
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for table_name, query in TABLES:
+                cur.execute(query)
+                rows = cur.fetchall()
+                csv_buf = io.StringIO()
+                if rows:
+                    writer = csv.DictWriter(csv_buf, fieldnames=rows[0].keys())
+                    writer.writeheader()
+                    writer.writerows(rows)
+                zf.writestr(f"{table_name}.csv", csv_buf.getvalue())
 
-    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for table_name, query in TABLES:
-            cursor.execute(query)
-            rows = cursor.fetchall()
-            csv_buf = io.StringIO()
-            if rows:
-                writer = csv.DictWriter(csv_buf, fieldnames=rows[0].keys())
-                writer.writeheader()
-                writer.writerows(rows)
-            zf.writestr(f"{table_name}.csv", csv_buf.getvalue())
-
-    close_db(conn)
     zip_buf.seek(0)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"yantralive_export_{timestamp}.zip"
@@ -591,6 +587,7 @@ def index():
 
 
 @app.route("/api/companies")
+@login_required
 def api_companies():
     cats = request.args.getlist("cat")
     industries = request.args.getlist("industry")
@@ -614,34 +611,18 @@ def api_companies():
     company_ids = [r["id"] for r in rows]
     visibility_map = {}
     if company_ids:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT company_id, hide_company, hide_employees, hide_contact_info
-            FROM company_visibility
-            WHERE company_id = ANY(%s)
-        """, (company_ids,))
-        for v in cursor.fetchall():
-            visibility_map[v["company_id"]] = dict(v)
-        close_db(conn)
+        with db_ctx() as (_, cur):
+            cur.execute("""
+                SELECT company_id, hide_company, hide_employees, hide_contact_info
+                FROM company_visibility
+                WHERE company_id = ANY(%s)
+            """, (company_ids,))
+            for v in cur.fetchall():
+                visibility_map[v["company_id"]] = dict(v)
 
     result = []
     for r in rows:
         cats_list = list(set(r["categories"].split("||"))) if r["categories"] else []
-
-        def safe_json(v):
-            if not v or v == "null":
-                return []
-            try:
-                parsed = json.loads(v)
-                if parsed is None:
-                    return []
-                if isinstance(parsed, list):
-                    return [i for i in parsed if i is not None]
-                return [parsed]
-            except Exception:
-                return [v]
-
         vis = visibility_map.get(r["id"], {})
         hide_company = vis.get("hide_company", False)
         hide_employees = vis.get("hide_employees", False)
@@ -686,21 +667,19 @@ def api_companies():
 
 
 @app.route("/api/company/<int:company_id>/people")
+@login_required
 def api_people(company_id):
     is_admin = session.get("role") == "admin"
 
     hide_employees = False
     hide_contact_info = False
     if not is_admin:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT hide_employees, hide_contact_info
-            FROM company_visibility
-            WHERE company_id = %s
-        """, (company_id,))
-        vis = cursor.fetchone()
-        close_db(conn)
+        with db_ctx() as (_, cur):
+            cur.execute("""
+                SELECT hide_employees, hide_contact_info
+                FROM company_visibility WHERE company_id = %s
+            """, (company_id,))
+            vis = cur.fetchone()
         if vis:
             hide_employees = vis["hide_employees"]
             hide_contact_info = vis["hide_contact_info"]
@@ -709,62 +688,48 @@ def api_people(company_id):
         return jsonify({"hidden": True, "people": []})
 
     people = get_people_for_company(company_id)
-    result = []
-    for p in people:
-        def safe_json(v):
-            if not v or v == "null":
-                return []
-            try:
-                parsed = json.loads(v)
-                if parsed is None:
-                    return []
-                if isinstance(parsed, list):
-                    return [i for i in parsed if i is not None]
-                return [parsed]
-            except Exception:
-                return [v]
-        result.append({
-            "id": p["id"],
-            "name": p["name"],
-            "role": p["role"],
-            "phones": [] if hide_contact_info else safe_json(p["phones"]),
-            "emails": [] if hide_contact_info else safe_json(p["emails"]),
-            "notes": p["notes"] or ""
-        })
+    result = [{
+        "id": p["id"],
+        "name": p["name"],
+        "role": p["role"],
+        "phones": [] if hide_contact_info else safe_json(p["phones"]),
+        "emails": [] if hide_contact_info else safe_json(p["emails"]),
+        "notes": p["notes"] or ""
+    } for p in people]
     return jsonify({"hidden": False, "people": result})
 
 
 @app.route("/api/stats")
+@login_required
 def api_stats():
     return jsonify(get_stats())
 
 
 @app.route("/api/company/<int:company_id>/notes", methods=["POST"])
+@login_required
 def save_notes(company_id):
     notes = (request.json or {}).get("notes", "")
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE companies SET notes = %s WHERE id = %s", (notes, company_id))
-    conn.commit()
-    close_db(conn)
+    with db_ctx() as (conn, cur):
+        cur.execute("UPDATE companies SET notes = %s WHERE id = %s", (notes, company_id))
+        conn.commit()
     return jsonify({"ok": True})
 
 @app.route("/api/company/<int:company_id>/domain", methods=["POST"])
+@admin_required
 def save_domain(company_id):
     domain = (request.json or {}).get("domain", "").strip()
     if not domain:
         return jsonify({"error": "no domain provided"}), 400
     domain = domain.replace("https://", "").replace("http://", "").rstrip("/")
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE companies SET websites = %s WHERE id = %s",
-                 (json.dumps([domain]), company_id))
-    conn.commit()
-    close_db(conn)
+    with db_ctx() as (conn, cur):
+        cur.execute("UPDATE companies SET websites = %s WHERE id = %s",
+                    (json.dumps([domain]), company_id))
+        conn.commit()
     resolve_flag(company_id, "no_domain", "resolved")
     return jsonify({"ok": True})
 
 @app.route("/api/transcript", methods=["POST"])
+@login_required
 def process_transcript():
     data = request.json or {}
     transcript = data.get("transcript", "").strip()
@@ -800,12 +765,9 @@ Transcript:
     suggested_company_id = None
     gpt_company = result.get("company")
     if gpt_company:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, name FROM companies")
-        rows = cursor.fetchall()
-        conn.commit()
-        close_db(conn)
+        with db_ctx() as (_, cur):
+            cur.execute("SELECT id, name FROM companies")
+            rows = cur.fetchall()
         gpt_lower = gpt_company.lower()
         best_match = None
         best_score = 0
@@ -828,47 +790,44 @@ Transcript:
 
 
 @app.route("/api/tasks", methods=["POST"])
+@login_required
 def save_tasks():
     data = request.json or {}
     company_id = data.get("company_id")
     tasks = data.get("tasks", [])
     transcript = data.get("transcript", "")
 
-    conn = get_db()
-    cursor = conn.cursor()
-    for task in tasks:
-        cursor.execute("""
-            INSERT INTO tasks (company_id, title, description, assignee, due_date, status, source_transcript, created_at)
-            VALUES (%s, %s, %s, %s, %s, 'To Do', %s, %s)
-        """, (
-            company_id,
-            task.get("title"),
-            task.get("description"),
-            task.get("assignee"),
-            task.get("due_date"),
-            transcript,
-            datetime.now().isoformat()
-        ))
-    conn.commit()
-    close_db(conn)
+    with db_ctx() as (conn, cur):
+        for task in tasks:
+            cur.execute("""
+                INSERT INTO tasks (company_id, title, description, assignee, due_date, status, source_transcript, created_at)
+                VALUES (%s, %s, %s, %s, %s, 'To Do', %s, %s)
+            """, (
+                company_id,
+                task.get("title"),
+                task.get("description"),
+                task.get("assignee"),
+                task.get("due_date"),
+                transcript,
+                datetime.now().isoformat()
+            ))
+        conn.commit()
     return jsonify({"ok": True, "saved": len(tasks)})
 
 @app.route("/api/tasks/<int:task_id>", methods=["DELETE"])
+@login_required
 def delete_task(task_id):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
-    conn.commit()
-    close_db(conn)
+    with db_ctx() as (conn, cur):
+        cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
+        conn.commit()
     return jsonify({"ok": True})
 
 
 @app.route("/api/tasks", methods=["GET"])
+@login_required
 def get_tasks():
     company_id = request.args.get("company_id")
     status = request.args.get("status")
-    conn = get_db()
-    cursor = conn.cursor()
     sql = """
         SELECT t.*, c.name as company_name
         FROM tasks t
@@ -883,13 +842,14 @@ def get_tasks():
         sql += " AND t.status = %s"
         params.append(status)
     sql += " ORDER BY t.created_at DESC"
-    cursor.execute(sql, params)
-    rows = cursor.fetchall()
-    close_db(conn)
+    with db_ctx() as (_, cur):
+        cur.execute(sql, params)
+        rows = cur.fetchall()
     return jsonify([dict(r) for r in rows])
 
 
 @app.route("/api/tasks/<int:task_id>", methods=["PATCH"])
+@login_required
 def update_task(task_id):
     data = request.json or {}
     allowed = {"title", "description", "assignee", "due_date", "status"}
@@ -898,24 +858,22 @@ def update_task(task_id):
         return jsonify({"error": "nothing to update"}), 400
     set_clause = ", ".join(f"{k} = %s" for k in updates)
     values = list(updates.values()) + [task_id]
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute(f"UPDATE tasks SET {set_clause} WHERE id = %s", values)
-    conn.commit()
-    close_db(conn)
+    with db_ctx() as (conn, cur):
+        cur.execute(f"UPDATE tasks SET {set_clause} WHERE id = %s", values)
+        conn.commit()
     return jsonify({"ok": True})
 
 
 @app.route("/api/companies/list")
+@login_required
 def api_companies_list():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name FROM companies ORDER BY name")
-    rows = cursor.fetchall()
-    close_db(conn)
+    with db_ctx() as (_, cur):
+        cur.execute("SELECT id, name FROM companies ORDER BY name")
+        rows = cur.fetchall()
     return jsonify([dict(r) for r in rows])
 
 @app.route("/api/enrich/single", methods=["POST"])
+@admin_required
 def enrich_single():
     company_id = (request.json or {}).get("company_id")
     if not company_id:
@@ -1015,17 +973,16 @@ def enrich_single():
 
 
 @app.route("/api/tasks/<int:task_id>/push-zoho", methods=["POST"])
+@login_required
 def push_to_zoho(task_id):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT t.*, c.name as company_name
-        FROM tasks t
-        LEFT JOIN companies c ON c.id = t.company_id
-        WHERE t.id = %s
-    """, (task_id,))
-    task = cursor.fetchone()
-    close_db(conn)
+    with db_ctx() as (_, cur):
+        cur.execute("""
+            SELECT t.*, c.name as company_name
+            FROM tasks t
+            LEFT JOIN companies c ON c.id = t.company_id
+            WHERE t.id = %s
+        """, (task_id,))
+        task = cur.fetchone()
 
     if not task:
         return jsonify({"error": "task not found"}), 404
@@ -1063,6 +1020,7 @@ def mobile_index():
 
 
 @app.route("/mobile/scan", methods=["POST"])
+@login_required
 def mobile_scan():
     files = request.files.getlist("images")
     if not files or len(files) == 0:
@@ -1087,6 +1045,7 @@ def mobile_scan():
 
 
 @app.route("/mobile/save", methods=["POST"])
+@login_required
 def mobile_save():
     data = request.json or {}
     if not data:
@@ -1112,13 +1071,11 @@ def mobile_enrich(company_id):
     def run():
         from enrich2 import scrape_website, enrich_company, save_enrichment, is_already_enriched
         import json
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT websites FROM companies WHERE id = %s", (company_id,))
-        row = cursor.fetchone()
-        cursor.execute("SELECT MIN(emails) as emails FROM people WHERE company_id = %s", (company_id,))
-        people_row = cursor.fetchone()
-        close_db(conn)
+        with db_ctx() as (_, cur):
+            cur.execute("SELECT websites FROM companies WHERE id = %s", (company_id,))
+            row = cur.fetchone()
+            cur.execute("SELECT MIN(emails) as emails FROM people WHERE company_id = %s", (company_id,))
+            people_row = cur.fetchone()
 
         if is_already_enriched(company_id):
             return
@@ -1152,24 +1109,16 @@ def mobile_enrich(company_id):
 @app.route("/mobile/enrich/<int:company_id>", methods=["GET"])
 @login_required
 def mobile_enrich_status(company_id):
-    conn = get_db()
-    cursor = conn.cursor()
+    row = None
     try:
-        cursor.execute("SELECT * FROM enrichment WHERE contact_id = %s", (company_id,))
-        row = cursor.fetchone()
-    except:
-        row = None
-    close_db(conn)
+        with db_ctx() as (_, cur):
+            cur.execute("SELECT * FROM enrichment WHERE contact_id = %s", (company_id,))
+            row = cur.fetchone()
+    except Exception:
+        pass
 
     if not row:
         return jsonify({"status": "pending"})
-
-    def safe_json(v):
-        if not v: return []
-        try:
-            parsed = json.loads(v)
-            return [i for i in parsed if i] if isinstance(parsed, list) else [parsed]
-        except: return [v]
 
     return jsonify({
         "status": "done",
@@ -1207,6 +1156,7 @@ CANONICAL_CATEGORIES = [
 
 
 @app.route("/api/flagged")
+@admin_required
 def api_flagged():
     rows = get_flagged()
     result = []
@@ -1232,17 +1182,17 @@ def api_flagged():
 
 
 @app.route("/api/flagged/categories")
+@admin_required
 def api_flag_categories():
     return jsonify(CANONICAL_CATEGORIES)
 
 
 @app.route("/api/flagged/<int:flag_id>/dismiss", methods=["POST"])
+@admin_required
 def api_dismiss_flag(flag_id):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT company_id, reason FROM flagged WHERE id = %s", (flag_id,))
-    row = cursor.fetchone()
-    close_db(conn)
+    with db_ctx() as (_, cur):
+        cur.execute("SELECT company_id, reason FROM flagged WHERE id = %s", (flag_id,))
+        row = cur.fetchone()
     if not row:
         return jsonify({"error": "flag not found"}), 404
     resolve_flag(row["company_id"], row["reason"], "dismissed")
@@ -1250,17 +1200,16 @@ def api_dismiss_flag(flag_id):
 
 
 @app.route("/api/flagged/<int:flag_id>/assign", methods=["POST"])
+@admin_required
 def api_assign_flag(flag_id):
     data = request.json or {}
     categories = data.get("categories", [])
     if not categories:
         return jsonify({"error": "no categories provided"}), 400
 
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT company_id, reason FROM flagged WHERE id = %s", (flag_id,))
-    row = cursor.fetchone()
-    close_db(conn)
+    with db_ctx() as (_, cur):
+        cur.execute("SELECT company_id, reason FROM flagged WHERE id = %s", (flag_id,))
+        row = cur.fetchone()
     if not row:
         return jsonify({"error": "flag not found"}), 404
 
@@ -1270,17 +1219,16 @@ def api_assign_flag(flag_id):
 
 
 @app.route("/api/flagged/<int:flag_id>/gpt", methods=["POST"])
+@admin_required
 def api_gpt_suggest(flag_id):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT f.company_id, f.reason, e.products
-        FROM flagged f
-        LEFT JOIN enrichment e ON e.contact_id = f.company_id
-        WHERE f.id = %s
-    """, (flag_id,))
-    row = cursor.fetchone()
-    close_db(conn)
+    with db_ctx() as (_, cur):
+        cur.execute("""
+            SELECT f.company_id, f.reason, e.products
+            FROM flagged f
+            LEFT JOIN enrichment e ON e.contact_id = f.company_id
+            WHERE f.id = %s
+        """, (flag_id,))
+        row = cur.fetchone()
     if not row:
         return jsonify({"error": "flag not found"}), 404
 
@@ -1327,6 +1275,7 @@ Return a JSON array of the category names that best match this company. Only inc
 
 
 @app.route("/api/flagged/gpt-bulk", methods=["POST"])
+@admin_required
 def api_gpt_bulk():
     rows = get_flagged()
     # only process no_category_match flags since others don't have products to classify
@@ -1395,47 +1344,44 @@ def api_gpt_bulk():
 @app.route("/api/people/<int:person_id>/notes", methods=["GET"])
 @login_required
 def get_person_notes(person_id):
-    conn = get_db()
-    cursor = conn.cursor()
     role = session.get("role")
     user_id = session["user_id"]
 
-    if role == "admin":
-        cursor.execute("""
-            SELECT pn.id, pn.note, pn.created_at, pn.visibility, u.username
-            FROM person_notes pn
-            JOIN users u ON u.id = pn.user_id
-            WHERE pn.person_id = %s
-            ORDER BY pn.created_at DESC
-        """, (person_id,))
-        notes = [dict(r) for r in cursor.fetchall()]
-        hidden_count = 0
-    else:
-        # get granted note ids for this user and person
-        cursor.execute("""
-            SELECT g.note_id FROM note_access_grants g
-            JOIN note_access_requests r ON r.id = g.request_id
-            WHERE r.requester_id = %s AND r.person_id = %s AND r.status = 'approved'
-        """, (user_id, person_id))
-        granted_ids = [r["note_id"] for r in cursor.fetchall()]
+    with db_ctx() as (_, cur):
+        if role == "admin":
+            cur.execute("""
+                SELECT pn.id, pn.note, pn.created_at, pn.visibility, u.username
+                FROM person_notes pn
+                JOIN users u ON u.id = pn.user_id
+                WHERE pn.person_id = %s
+                ORDER BY pn.created_at DESC
+            """, (person_id,))
+            notes = [dict(r) for r in cur.fetchall()]
+            hidden_count = 0
+        else:
+            cur.execute("""
+                SELECT g.note_id FROM note_access_grants g
+                JOIN note_access_requests r ON r.id = g.request_id
+                WHERE r.requester_id = %s AND r.person_id = %s AND r.status = 'approved'
+            """, (user_id, person_id))
+            granted_ids = [r["note_id"] for r in cur.fetchall()]
 
-        cursor.execute("""
-            SELECT pn.id, pn.note, pn.created_at, pn.visibility, u.username
-            FROM person_notes pn
-            JOIN users u ON u.id = pn.user_id
-            WHERE pn.person_id = %s AND (pn.visibility = 'all' OR pn.id = ANY(%s))
-            ORDER BY pn.created_at DESC
-        """, (person_id, granted_ids or [0]))
-        notes = [dict(r) for r in cursor.fetchall()]
+            cur.execute("""
+                SELECT pn.id, pn.note, pn.created_at, pn.visibility, u.username
+                FROM person_notes pn
+                JOIN users u ON u.id = pn.user_id
+                WHERE pn.person_id = %s AND (pn.visibility = 'all' OR pn.id = ANY(%s))
+                ORDER BY pn.created_at DESC
+            """, (person_id, granted_ids or [0]))
+            notes = [dict(r) for r in cur.fetchall()]
 
-        cursor.execute("""
-            SELECT COUNT(*) as count FROM person_notes
-            WHERE person_id = %s AND visibility = 'admin'
-            AND id != ALL(%s)
-        """, (person_id, granted_ids or [0]))
-        hidden_count = cursor.fetchone()["count"]
+            cur.execute("""
+                SELECT COUNT(*) as count FROM person_notes
+                WHERE person_id = %s AND visibility = 'admin'
+                AND id != ALL(%s)
+            """, (person_id, granted_ids or [0]))
+            hidden_count = cur.fetchone()["count"]
 
-    close_db(conn)
     return jsonify({"notes": notes, "hidden_count": hidden_count})
 
 @app.route("/api/people/<int:person_id>/notes", methods=["POST"])
@@ -1448,14 +1394,12 @@ def save_person_notes(person_id):
         return jsonify({"error": "no note provided"}), 400
     if session.get("role") != "admin":
         visibility = "all"
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO person_notes (person_id, user_id, note, created_at, visibility)
-        VALUES (%s, %s, %s, %s, %s)
-    """, (person_id, session["user_id"], note, datetime.now().isoformat(), visibility))
-    conn.commit()
-    close_db(conn)
+    with db_ctx() as (conn, cur):
+        cur.execute("""
+            INSERT INTO person_notes (person_id, user_id, note, created_at, visibility)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (person_id, session["user_id"], note, datetime.now().isoformat(), visibility))
+        conn.commit()
     return jsonify({"ok": True})
 
 @app.route("/api/people/search")
@@ -1466,65 +1410,55 @@ def api_people_search():
     if not q:
         return jsonify([])
 
-    conn = get_db()
-    cursor = conn.cursor()
-
-    if field == "notes":
-        if session.get("role") == "admin":
-            cursor.execute("""
-                SELECT DISTINCT p.id, p.name, p.role, p.phones, p.emails,
-                    c.name as company_name,
-                    pn.note as matched_note, pn.created_at, u.username
+    with db_ctx() as (_, cur):
+        if field == "notes":
+            if session.get("role") == "admin":
+                cur.execute("""
+                    SELECT DISTINCT p.id, p.name, p.role, p.phones, p.emails,
+                        c.name as company_name,
+                        pn.note as matched_note, pn.created_at, u.username
+                    FROM people p
+                    JOIN companies c ON c.id = p.company_id
+                    JOIN person_notes pn ON pn.person_id = p.id
+                    JOIN users u ON u.id = pn.user_id
+                    WHERE pn.note ILIKE %s
+                    ORDER BY p.name
+                """, (f"%{q}%",))
+            else:
+                cur.execute("""
+                    SELECT DISTINCT p.id, p.name, p.role, p.phones, p.emails,
+                        c.name as company_name,
+                        pn.note as matched_note, pn.created_at, u.username
+                    FROM people p
+                    JOIN companies c ON c.id = p.company_id
+                    JOIN person_notes pn ON pn.person_id = p.id
+                    JOIN users u ON u.id = pn.user_id
+                    WHERE pn.note ILIKE %s AND pn.visibility = 'all'
+                    ORDER BY p.name
+                """, (f"%{q}%",))
+        elif field == "people":
+            cur.execute("""
+                SELECT p.id, p.name, p.role, p.phones, p.emails,
+                       c.name as company_name,
+                       NULL as matched_note, NULL as created_at, NULL as username
                 FROM people p
                 JOIN companies c ON c.id = p.company_id
-                JOIN person_notes pn ON pn.person_id = p.id
-                JOIN users u ON u.id = pn.user_id
-                WHERE pn.note ILIKE %s
+                WHERE p.name ILIKE %s
                 ORDER BY p.name
             """, (f"%{q}%",))
-        else:
-            cursor.execute("""
+        elif field == "products":
+            cur.execute("""
                 SELECT DISTINCT p.id, p.name, p.role, p.phones, p.emails,
-                    c.name as company_name,
-                    pn.note as matched_note, pn.created_at, u.username
+                       c.name as company_name,
+                       e.products as matched_note, NULL as created_at, NULL as username
                 FROM people p
                 JOIN companies c ON c.id = p.company_id
-                JOIN person_notes pn ON pn.person_id = p.id
-                JOIN users u ON u.id = pn.user_id
-                WHERE pn.note ILIKE %s AND pn.visibility = 'all'
+                JOIN enrichment e ON e.contact_id = c.id
+                WHERE e.products ILIKE %s
                 ORDER BY p.name
             """, (f"%{q}%",))
-    elif field == "people":
-        cursor.execute("""
-            SELECT p.id, p.name, p.role, p.phones, p.emails,
-                   c.name as company_name,
-                   NULL as matched_note, NULL as created_at, NULL as username
-            FROM people p
-            JOIN companies c ON c.id = p.company_id
-            WHERE p.name ILIKE %s
-            ORDER BY p.name
-        """, (f"%{q}%",))
-    elif field == "products":
-        cursor.execute("""
-            SELECT DISTINCT p.id, p.name, p.role, p.phones, p.emails,
-                   c.name as company_name,
-                   e.products as matched_note, NULL as created_at, NULL as username
-            FROM people p
-            JOIN companies c ON c.id = p.company_id
-            JOIN enrichment e ON e.contact_id = c.id
-            WHERE e.products ILIKE %s
-            ORDER BY p.name
-        """, (f"%{q}%",))
 
-    rows = cursor.fetchall()
-    close_db(conn)
-
-    def safe_json(v):
-        if not v or v == "null": return []
-        try:
-            parsed = json.loads(v)
-            return [i for i in parsed if i] if isinstance(parsed, list) else [parsed]
-        except: return [v]
+        rows = cur.fetchall()
 
     return jsonify([{
         "id": r["id"],
@@ -1546,25 +1480,21 @@ def edit_note(note_id):
     note = data.get("note", "").strip()
     visibility = data.get("visibility")
 
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id, visibility FROM person_notes WHERE id = %s", (note_id,))
-    row = cursor.fetchone()
-    if not row:
-        close_db(conn)
-        return jsonify({"error": "note not found"}), 404
-    if row["user_id"] != session["user_id"]:
-        close_db(conn)
-        return jsonify({"error": "not your note"}), 403
-    if not note:
-        cursor.execute("DELETE FROM note_access_grants WHERE note_id = %s", (note_id,))
-        cursor.execute("DELETE FROM person_notes WHERE id = %s", (note_id,))
-    else:
-        new_visibility = visibility if visibility and session.get("role") == "admin" else row["visibility"]
-        cursor.execute("UPDATE person_notes SET note = %s, visibility = %s WHERE id = %s",
-                      (note, new_visibility, note_id))
-    conn.commit()
-    close_db(conn)
+    with db_ctx() as (conn, cur):
+        cur.execute("SELECT user_id, visibility FROM person_notes WHERE id = %s", (note_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "note not found"}), 404
+        if row["user_id"] != session["user_id"]:
+            return jsonify({"error": "not your note"}), 403
+        if not note:
+            cur.execute("DELETE FROM note_access_grants WHERE note_id = %s", (note_id,))
+            cur.execute("DELETE FROM person_notes WHERE id = %s", (note_id,))
+        else:
+            new_visibility = visibility if visibility and session.get("role") == "admin" else row["visibility"]
+            cur.execute("UPDATE person_notes SET note = %s, visibility = %s WHERE id = %s",
+                        (note, new_visibility, note_id))
+        conn.commit()
     return jsonify({"ok": True, "deleted": not note})
 
 @app.route("/api/notes/cleanup", methods=["POST"])
@@ -1688,24 +1618,18 @@ def pipeline_output(job_id):
 @login_required
 def request_access(person_id):
     user_id = session["user_id"]
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT id, status FROM note_access_requests
-        WHERE requester_id = %s AND person_id = %s AND status = 'pending'
-    """, (user_id, person_id))
-    existing = cursor.fetchone()
-    if existing:
-        close_db(conn)
-        return jsonify({"error": "already requested"}), 409
-
-    cursor.execute("""
-        INSERT INTO note_access_requests (requester_id, person_id, status, created_at)
-        VALUES (%s, %s, 'pending', %s)
-    """, (user_id, person_id, datetime.now().isoformat()))
-    conn.commit()
-    close_db(conn)
+    with db_ctx() as (conn, cur):
+        cur.execute("""
+            SELECT id FROM note_access_requests
+            WHERE requester_id = %s AND person_id = %s AND status = 'pending'
+        """, (user_id, person_id))
+        if cur.fetchone():
+            return jsonify({"error": "already requested"}), 409
+        cur.execute("""
+            INSERT INTO note_access_requests (requester_id, person_id, status, created_at)
+            VALUES (%s, %s, 'pending', %s)
+        """, (user_id, person_id, datetime.now().isoformat()))
+        conn.commit()
     return jsonify({"ok": True})
 
 
@@ -1713,25 +1637,21 @@ def request_access(person_id):
 @login_required
 def get_access_request_status(person_id):
     user_id = session["user_id"]
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT r.id, r.status,
-            ARRAY_AGG(g.note_id) FILTER (WHERE g.note_id IS NOT NULL) as granted_note_ids
-        FROM note_access_requests r
-        LEFT JOIN note_access_grants g ON g.request_id = r.id
-        WHERE r.requester_id = %s AND r.person_id = %s
-        GROUP BY r.id, r.status
-        ORDER BY r.created_at DESC
-        LIMIT 1
-    """, (user_id, person_id))
-    row = cursor.fetchone()
-    close_db(conn)
+    with db_ctx() as (_, cur):
+        cur.execute("""
+            SELECT r.id, r.status,
+                ARRAY_AGG(g.note_id) FILTER (WHERE g.note_id IS NOT NULL) as granted_note_ids
+            FROM note_access_requests r
+            LEFT JOIN note_access_grants g ON g.request_id = r.id
+            WHERE r.requester_id = %s AND r.person_id = %s
+            GROUP BY r.id, r.status
+            ORDER BY r.created_at DESC
+            LIMIT 1
+        """, (user_id, person_id))
+        row = cur.fetchone()
 
     if not row or not row["id"]:
         return jsonify({"status": "none"})
-
     return jsonify({
         "status": row["status"],
         "request_id": row["id"],
@@ -1742,54 +1662,48 @@ def get_access_request_status(person_id):
 @app.route("/api/admin/access-requests", methods=["GET"])
 @admin_required
 def get_access_requests():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT r.id, r.status, r.created_at, r.person_id,
-               u.username as requester,
-               p.name as person_name,
-               c.name as company_name
-        FROM note_access_requests r
-        JOIN users u ON u.id = r.requester_id
-        JOIN people p ON p.id = r.person_id
-        JOIN companies c ON c.id = p.company_id
-        WHERE r.status = 'pending'
-        ORDER BY r.created_at DESC
-    """)
-    rows = cursor.fetchall()
-    close_db(conn)
+    with db_ctx() as (_, cur):
+        cur.execute("""
+            SELECT r.id, r.status, r.created_at, r.person_id,
+                   u.username as requester,
+                   p.name as person_name,
+                   c.name as company_name
+            FROM note_access_requests r
+            JOIN users u ON u.id = r.requester_id
+            JOIN people p ON p.id = r.person_id
+            JOIN companies c ON c.id = p.company_id
+            WHERE r.status = 'pending'
+            ORDER BY r.created_at DESC
+        """)
+        rows = cur.fetchall()
     return jsonify([dict(r) for r in rows])
 
 
 @app.route("/api/admin/access-requests/<int:request_id>/notes", methods=["GET"])
 @admin_required
 def get_request_notes(request_id):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT person_id, requester_id FROM note_access_requests WHERE id = %s", (request_id,))
-    row = cursor.fetchone()
-    if not row:
-        close_db(conn)
-        return jsonify({"error": "not found"}), 404
+    with db_ctx() as (_, cur):
+        cur.execute("SELECT person_id, requester_id FROM note_access_requests WHERE id = %s", (request_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
 
-    # get note ids already granted to this specific requester for this person
-    cursor.execute("""
-        SELECT g.note_id FROM note_access_grants g
-        JOIN note_access_requests r ON r.id = g.request_id
-        WHERE r.requester_id = %s AND r.person_id = %s AND r.status = 'approved'
-    """, (row["requester_id"], row["person_id"]))
-    already_granted = [r["note_id"] for r in cursor.fetchall()]
+        cur.execute("""
+            SELECT g.note_id FROM note_access_grants g
+            JOIN note_access_requests r ON r.id = g.request_id
+            WHERE r.requester_id = %s AND r.person_id = %s AND r.status = 'approved'
+        """, (row["requester_id"], row["person_id"]))
+        already_granted = [r["note_id"] for r in cur.fetchall()]
 
-    cursor.execute("""
-        SELECT pn.id, pn.note, pn.created_at, pn.visibility, u.username
-        FROM person_notes pn
-        JOIN users u ON u.id = pn.user_id
-        WHERE pn.person_id = %s AND pn.visibility = 'admin'
-        AND pn.id != ALL(%s)
-        ORDER BY pn.created_at DESC
-    """, (row["person_id"], already_granted or [0]))
-    notes = cursor.fetchall()
-    close_db(conn)
+        cur.execute("""
+            SELECT pn.id, pn.note, pn.created_at, pn.visibility, u.username
+            FROM person_notes pn
+            JOIN users u ON u.id = pn.user_id
+            WHERE pn.person_id = %s AND pn.visibility = 'admin'
+            AND pn.id != ALL(%s)
+            ORDER BY pn.created_at DESC
+        """, (row["person_id"], already_granted or [0]))
+        notes = cur.fetchall()
     return jsonify([dict(n) for n in notes])
 
 
@@ -1797,31 +1711,24 @@ def get_request_notes(request_id):
 @admin_required
 def resolve_access_request(request_id):
     data = request.json or {}
-    action = data.get("action")  # "approve" or "deny"
+    action = data.get("action")
     note_ids = data.get("note_ids", [])
 
     if action not in ("approve", "deny"):
         return jsonify({"error": "invalid action"}), 400
 
-    conn = get_db()
-    cursor = conn.cursor()
-
     status = "approved" if action == "approve" else "denied"
-    cursor.execute("""
-        UPDATE note_access_requests
-        SET status = %s, resolved_at = %s
-        WHERE id = %s
-    """, (status, datetime.now().isoformat(), request_id))
-
-    if action == "approve" and note_ids:
-        for note_id in note_ids:
-            cursor.execute("""
-                INSERT INTO note_access_grants (request_id, note_id)
-                VALUES (%s, %s)
-            """, (request_id, note_id))
-
-    conn.commit()
-    close_db(conn)
+    with db_ctx() as (conn, cur):
+        cur.execute("""
+            UPDATE note_access_requests SET status = %s, resolved_at = %s WHERE id = %s
+        """, (status, datetime.now().isoformat(), request_id))
+        if action == "approve" and note_ids:
+            for note_id in note_ids:
+                cur.execute(
+                    "INSERT INTO note_access_grants (request_id, note_id) VALUES (%s, %s)",
+                    (request_id, note_id)
+                )
+        conn.commit()
     return jsonify({"ok": True})
 
 
@@ -1832,20 +1739,18 @@ def resolve_access_request(request_id):
 @app.route("/api/admin/companies/visibility", methods=["GET"])
 @admin_required
 def api_admin_get_visibility():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT c.id, c.name,
-               COALESCE(v.hide_company, FALSE) AS hide_company,
-               COALESCE(v.hide_employees, FALSE) AS hide_employees,
-               COALESCE(v.hide_contact_info, FALSE) AS hide_contact_info
-        FROM companies c
-        LEFT JOIN company_visibility v ON v.company_id = c.id
-        ORDER BY c.name
-    """)
-    rows = [dict(r) for r in cursor.fetchall()]
-    close_db(conn)
-    return jsonify(rows)
+    with db_ctx() as (_, cur):
+        cur.execute("""
+            SELECT c.id, c.name,
+                   COALESCE(v.hide_company, FALSE) AS hide_company,
+                   COALESCE(v.hide_employees, FALSE) AS hide_employees,
+                   COALESCE(v.hide_contact_info, FALSE) AS hide_contact_info
+            FROM companies c
+            LEFT JOIN company_visibility v ON v.company_id = c.id
+            ORDER BY c.name
+        """)
+        rows = cur.fetchall()
+    return jsonify([dict(r) for r in rows])
 
 
 @app.route("/api/company/<int:company_id>/visibility", methods=["POST"])
@@ -1856,18 +1761,16 @@ def api_set_visibility(company_id):
     hide_employees = bool(data.get("hide_employees", False))
     hide_contact_info = bool(data.get("hide_contact_info", False))
 
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO company_visibility (company_id, hide_company, hide_employees, hide_contact_info)
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT (company_id) DO UPDATE
-            SET hide_company = EXCLUDED.hide_company,
-                hide_employees = EXCLUDED.hide_employees,
-                hide_contact_info = EXCLUDED.hide_contact_info
-    """, (company_id, hide_company, hide_employees, hide_contact_info))
-    conn.commit()
-    close_db(conn)
+    with db_ctx() as (conn, cur):
+        cur.execute("""
+            INSERT INTO company_visibility (company_id, hide_company, hide_employees, hide_contact_info)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (company_id) DO UPDATE
+                SET hide_company = EXCLUDED.hide_company,
+                    hide_employees = EXCLUDED.hide_employees,
+                    hide_contact_info = EXCLUDED.hide_contact_info
+        """, (company_id, hide_company, hide_employees, hide_contact_info))
+        conn.commit()
     return jsonify({"ok": True})
 
 
