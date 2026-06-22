@@ -28,6 +28,25 @@ connection_pool = pool.SimpleConnectionPool(
     dsn=os.getenv("DATABASE_URL")
 )
 
+
+def _ensure_company_visibility_table():
+    conn = connection_pool.getconn()
+    conn.cursor_factory = psycopg2.extras.RealDictCursor
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS company_visibility (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER UNIQUE NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            hide_company BOOLEAN DEFAULT FALSE,
+            hide_employees BOOLEAN DEFAULT FALSE,
+            hide_contact_info BOOLEAN DEFAULT FALSE
+        )
+    """)
+    conn.commit()
+    connection_pool.putconn(conn)
+
+_ensure_company_visibility_table()
+
 from db_addition import save_categories, save_flag, resolve_flag, get_flagged
 from flask import Flask, Response, jsonify, render_template, request, stream_with_context
 
@@ -589,10 +608,27 @@ def api_companies():
         sort_dir=sort_dir,
     )
 
+    is_admin = session.get("role") == "admin"
+
+    # Fetch visibility settings for all returned companies
+    company_ids = [r["id"] for r in rows]
+    visibility_map = {}
+    if company_ids:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT company_id, hide_company, hide_employees, hide_contact_info
+            FROM company_visibility
+            WHERE company_id = ANY(%s)
+        """, (company_ids,))
+        for v in cursor.fetchall():
+            visibility_map[v["company_id"]] = dict(v)
+        close_db(conn)
+
     result = []
     for r in rows:
         cats_list = list(set(r["categories"].split("||"))) if r["categories"] else []
-        # parse JSON fields
+
         def safe_json(v):
             if not v or v == "null":
                 return []
@@ -606,7 +642,19 @@ def api_companies():
             except Exception:
                 return [v]
 
-        result.append({
+        vis = visibility_map.get(r["id"], {})
+        hide_company = vis.get("hide_company", False)
+        hide_employees = vis.get("hide_employees", False)
+        hide_contact_info = vis.get("hide_contact_info", False)
+
+        # Non-admins skip fully hidden companies
+        if not is_admin and hide_company:
+            continue
+
+        phones = safe_json(r["phones"])
+        emails = safe_json(r.get("emails"))
+
+        company = {
             "id": r["id"],
             "name": r["name"],
             "domain": r["domain"],
@@ -617,16 +665,49 @@ def api_companies():
             "markets": safe_json(r["markets"]),
             "categories": sorted(cats_list),
             "websites": safe_json(r["websites"]),
-            "phones": safe_json(r["phones"]),
-            "emails": safe_json(r["emails"]),
+            "phones": [] if (not is_admin and hide_contact_info) else phones,
+            "emails": [] if (not is_admin and hide_contact_info) else emails,
             "addresses": safe_json(r["addresses"]),
             "notes": r["notes"] or "",
-        })
+        }
+
+        if is_admin:
+            company["visibility"] = {
+                "hide_company": hide_company,
+                "hide_employees": hide_employees,
+                "hide_contact_info": hide_contact_info,
+            }
+        else:
+            company["employees_hidden"] = hide_employees
+            company["contact_info_hidden"] = hide_contact_info
+
+        result.append(company)
     return jsonify(result)
 
 
 @app.route("/api/company/<int:company_id>/people")
 def api_people(company_id):
+    is_admin = session.get("role") == "admin"
+
+    hide_employees = False
+    hide_contact_info = False
+    if not is_admin:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT hide_employees, hide_contact_info
+            FROM company_visibility
+            WHERE company_id = %s
+        """, (company_id,))
+        vis = cursor.fetchone()
+        close_db(conn)
+        if vis:
+            hide_employees = vis["hide_employees"]
+            hide_contact_info = vis["hide_contact_info"]
+
+    if hide_employees:
+        return jsonify({"hidden": True, "people": []})
+
     people = get_people_for_company(company_id)
     result = []
     for p in people:
@@ -646,11 +727,11 @@ def api_people(company_id):
             "id": p["id"],
             "name": p["name"],
             "role": p["role"],
-            "phones": safe_json(p["phones"]),
-            "emails": safe_json(p["emails"]),
+            "phones": [] if hide_contact_info else safe_json(p["phones"]),
+            "emails": [] if hide_contact_info else safe_json(p["emails"]),
             "notes": p["notes"] or ""
         })
-    return jsonify(result)
+    return jsonify({"hidden": False, "people": result})
 
 
 @app.route("/api/stats")
@@ -1739,6 +1820,52 @@ def resolve_access_request(request_id):
                 VALUES (%s, %s)
             """, (request_id, note_id))
 
+    conn.commit()
+    close_db(conn)
+    return jsonify({"ok": True})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Company visibility (admin)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/admin/companies/visibility", methods=["GET"])
+@admin_required
+def api_admin_get_visibility():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT c.id, c.name,
+               COALESCE(v.hide_company, FALSE) AS hide_company,
+               COALESCE(v.hide_employees, FALSE) AS hide_employees,
+               COALESCE(v.hide_contact_info, FALSE) AS hide_contact_info
+        FROM companies c
+        LEFT JOIN company_visibility v ON v.company_id = c.id
+        ORDER BY c.name
+    """)
+    rows = [dict(r) for r in cursor.fetchall()]
+    close_db(conn)
+    return jsonify(rows)
+
+
+@app.route("/api/company/<int:company_id>/visibility", methods=["POST"])
+@admin_required
+def api_set_visibility(company_id):
+    data = request.json or {}
+    hide_company = bool(data.get("hide_company", False))
+    hide_employees = bool(data.get("hide_employees", False))
+    hide_contact_info = bool(data.get("hide_contact_info", False))
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO company_visibility (company_id, hide_company, hide_employees, hide_contact_info)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (company_id) DO UPDATE
+            SET hide_company = EXCLUDED.hide_company,
+                hide_employees = EXCLUDED.hide_employees,
+                hide_contact_info = EXCLUDED.hide_contact_info
+    """, (company_id, hide_company, hide_employees, hide_contact_info))
     conn.commit()
     close_db(conn)
     return jsonify({"ok": True})

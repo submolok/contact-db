@@ -1695,10 +1695,16 @@ function renderTable(companies) {
       ? `<a href="https://${c.domain}" target="_blank" class="td-domain">${c.domain}</a>`
       : `<span style="color:var(--text3);font-family:var(--mono);font-size:.7rem">—</span>`;
 
+    const vis = c.visibility || {};
+    const visRestricted = vis.hide_company || vis.hide_employees || vis.hide_contact_info;
+    const lockBadge = (currentRole === 'admin' && visRestricted)
+      ? `<span title="Visibility restricted" style="margin-left:6px;font-size:0.6rem;opacity:0.6">🔒</span>`
+      : '';
+
     html += `
     <tr class="company-row ${isOpen ? 'expanded' : ''}" data-id="${c.id}" onclick="toggleRow(${c.id})">
       <td><span class="expand-arrow ${isOpen ? '' : ''}">▶</span></td>
-      <td><div class="td-name">${escHtml(c.name || '—')}</div></td>
+      <td><div class="td-name">${escHtml(c.name || '—')}${lockBadge}</div></td>
       <td>${domainHtml}</td>
       <td style="color:var(--text2);font-size:.8rem">${escHtml(c.primary_industry || '—')}</td>
       <td>${types || '<span style="color:var(--text3)">—</span>'}</td>
@@ -1757,29 +1763,51 @@ async function loadExpandRow(id) {
   if (!company) return;
 
   let people = [];
+  let employeesHidden = false;
   try {
     const res = await fetch(`/api/company/${id}/people`);
-    people = await res.json();
+    const data = await res.json();
+    if (data.hidden) {
+      employeesHidden = true;
+    } else {
+      people = data.people || [];
+    }
   } catch(e) {}
+
+  const contactInfoHidden = company.contact_info_hidden === true;
 
   const products = (company.products || []).map(p =>
     `<span class="tag-product">${escHtml(p)}</span>`).join('');
 
-  const peopleHtml = people.length ? people.map(p => `
-    <div class="person-card">
-      <div class="person-name">${escHtml(p.name || '—')}</div>
-      <div class="person-role">${escHtml(p.role || '')}</div>
-      ${(p.emails || []).map(e => `<div class="person-contact">✉ ${escHtml(e)}</div>`).join('')}
-      ${(p.phones || []).map(ph => `<div class="person-contact">✆ ${escHtml(ph)}</div>`).join('')}
-      <div style="margin-top:8px">
-        <div style="font-family:var(--mono);font-size:0.55rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text3);margin-bottom:4px;cursor:pointer" onclick="togglePersonNotes(${p.id}, this)">▶ Notes</div>
-        <div id="person-notes-${p.id}" style="display:none;margin-top:6px"></div>
+  let peopleHtml;
+  if (employeesHidden) {
+    peopleHtml = `<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text3);font-family:var(--mono);font-size:.72rem">
+      <span style="font-size:1rem">🔒</span> Employee information is restricted
+    </div>`;
+  } else if (people.length) {
+    peopleHtml = people.map(p => `
+      <div class="person-card">
+        <div class="person-name">${escHtml(p.name || '—')}</div>
+        <div class="person-role">${escHtml(p.role || '')}</div>
+        ${(p.emails || []).map(e => `<div class="person-contact">✉ ${escHtml(e)}</div>`).join('')}
+        ${(p.phones || []).map(ph => `<div class="person-contact">✆ ${escHtml(ph)}</div>`).join('')}
+        ${contactInfoHidden && !p.emails.length && !p.phones.length ? `<div style="font-family:var(--mono);font-size:.62rem;color:var(--text3);margin-top:4px">🔒 Contact info restricted</div>` : ''}
+        <div style="margin-top:8px">
+          <div style="font-family:var(--mono);font-size:0.55rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text3);margin-bottom:4px;cursor:pointer" onclick="togglePersonNotes(${p.id}, this)">▶ Notes</div>
+          <div id="person-notes-${p.id}" style="display:none;margin-top:6px"></div>
+        </div>
       </div>
-    </div>
-  `).join('') : '<span style="color:var(--text3);font-size:.75rem;font-family:var(--mono)">No contacts found</span>';
+    `).join('');
+  } else {
+    peopleHtml = '<span style="color:var(--text3);font-size:.75rem;font-family:var(--mono)">No contacts found</span>';
+  }
 
   const markets = (company.markets || []).map(m =>
     `<span class="tag tag-market">${escHtml(m)}</span>`).join('') || '—';
+
+  const hiddenContactNote = contactInfoHidden
+    ? `<div style="display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;color:var(--text3);font-family:var(--mono);font-size:.68rem;margin-top:8px"><span>🔒</span> Contact information is restricted</div>`
+    : '';
 
   inner.innerHTML = `
     <div class="expand-section">
@@ -1817,6 +1845,7 @@ async function loadExpandRow(id) {
       <div style="font-family:var(--mono);font-size:.7rem;color:var(--text2)">${(company.phones||[]).join(' · ')}</div>` : ''}
       ${(company.emails||[]).length ? `<div class="expand-label" style="margin-top:8px">Company Emails</div>
       <div>${(company.emails||[]).map(e =>`<a href="mailto:${escHtml(e)}" style="display:block;font-family:var(--mono);font-size:.7rem;color:var(--blue)">${escHtml(e)}</a>`).join('')}</div>` : ''}
+      ${hiddenContactNote}
     </div>
   `;
 }

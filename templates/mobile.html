@@ -1519,8 +1519,13 @@ async function selectCompany(companyId, companyName) {
 
   try {
     const res = await fetch(`/api/company/${companyId}/people`);
-    const people = await res.json();
-    renderContactsPeople(people, companyName);
+    const data = await res.json();
+    if (data.hidden) {
+      document.getElementById('contacts-people-list').innerHTML =
+        '<div class="empty"><p style="display:flex;align-items:center;gap:6px"><span>🔒</span> Employee information is restricted</p></div>';
+      return;
+    }
+    renderContactsPeople(data.people || [], companyName);
   } catch(e) {
     document.getElementById('contacts-people-list').innerHTML =
       '<div class="empty"><p>Error loading contacts</p></div>';

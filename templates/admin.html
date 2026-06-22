@@ -312,6 +312,37 @@ html, body {
 .note-select-item:hover { border-color: var(--border2); }
 .note-select-item.selected { border-color: var(--amber-dim); background: rgba(245,166,35,0.05); }
 .note-select-item input { accent-color: var(--amber); flex-shrink: 0; margin-top: 2px; }
+
+/* visibility toggle switch */
+.vis-toggle {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  cursor: pointer;
+}
+.vis-toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.vis-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border2);
+  border-radius: 20px;
+  transition: background 0.2s;
+}
+.vis-slider::before {
+  content: '';
+  position: absolute;
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background: var(--text2);
+  border-radius: 50%;
+  transition: transform 0.2s, background 0.2s;
+}
+.vis-toggle input:checked + .vis-slider { background: var(--red); }
+.vis-toggle input:checked + .vis-slider::before { transform: translateX(16px); background: #fff; }
+.vis-row:hover { background: var(--bg3); }
 </style>
 </head>
 <body>
@@ -336,6 +367,7 @@ html, body {
       Access Requests
       <span id="request-badge" style="display:none;background:var(--red);color:#fff;font-family:var(--mono);font-size:0.55rem;padding:1px 5px;border-radius:8px;margin-left:6px">0</span>
     </button>
+    <button class="admin-tab" data-section="visibility" onclick="switchAdminTab('visibility')">Visibility</button>
   </div>
   <div class="page-sub">USER MANAGEMENT</div>
 
@@ -406,6 +438,36 @@ html, body {
         <div style="text-align:center;padding:24px;color:var(--text3);font-family:var(--mono);font-size:0.72rem">Loading…</div>
       </div>
     </div>
+  </div>
+
+  <!-- VISIBILITY SECTION -->
+  <div id="section-visibility" style="display:none">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Company Visibility</div>
+        <span id="visibility-count" style="font-family:var(--mono);font-size:0.62rem;color:var(--text3)"></span>
+      </div>
+      <div class="card-body" style="padding-bottom:8px">
+        <input
+          class="form-input"
+          type="text"
+          id="visibility-search"
+          placeholder="Search companies…"
+          oninput="filterVisibilityList()"
+          style="width:100%;margin-bottom:16px"
+        >
+        <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:0;align-items:center;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:3px 3px 0 0;margin-bottom:0">
+          <span style="font-family:var(--mono);font-size:0.58rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text3)">Company</span>
+          <span style="font-family:var(--mono);font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--text3);text-align:center;min-width:90px">Hide Company</span>
+          <span style="font-family:var(--mono);font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--text3);text-align:center;min-width:100px">Hide Employees</span>
+          <span style="font-family:var(--mono);font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--text3);text-align:center;min-width:110px">Hide Contact Info</span>
+        </div>
+        <div id="visibility-list" style="border:1px solid var(--border);border-top:none;border-radius:0 0 3px 3px;max-height:520px;overflow-y:auto">
+          <div style="text-align:center;padding:24px;color:var(--text3);font-family:var(--mono);font-size:0.72rem">Loading…</div>
+        </div>
+      </div>
+    </div>
+    <div class="status-msg" id="visibility-status" style="margin-top:-16px;margin-bottom:16px"></div>
   </div>
 </div>
 
@@ -508,7 +570,99 @@ function switchAdminTab(section) {
   });
   document.getElementById('section-users').style.display = section === 'users' ? 'block' : 'none';
   document.getElementById('section-requests').style.display = section === 'requests' ? 'block' : 'none';
+  document.getElementById('section-visibility').style.display = section === 'visibility' ? 'block' : 'none';
   if (section === 'requests') loadAccessRequests();
+  if (section === 'visibility') loadVisibility();
+}
+
+let _allVisibilityCompanies = [];
+
+async function loadVisibility() {
+  const container = document.getElementById('visibility-list');
+  container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3);font-family:var(--mono);font-size:0.72rem">Loading…</div>';
+
+  const res = await fetch('/api/admin/companies/visibility');
+  _allVisibilityCompanies = await res.json();
+
+  document.getElementById('visibility-count').textContent = `${_allVisibilityCompanies.length} companies`;
+  renderVisibilityList(_allVisibilityCompanies);
+}
+
+function filterVisibilityList() {
+  const q = document.getElementById('visibility-search').value.toLowerCase();
+  const filtered = q
+    ? _allVisibilityCompanies.filter(c => c.name.toLowerCase().includes(q))
+    : _allVisibilityCompanies;
+  renderVisibilityList(filtered);
+}
+
+function renderVisibilityList(companies) {
+  const container = document.getElementById('visibility-list');
+  if (!companies.length) {
+    container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3);font-family:var(--mono);font-size:0.72rem">No companies found.</div>';
+    return;
+  }
+  container.innerHTML = companies.map(c => `
+    <div class="vis-row" data-id="${c.id}" style="display:grid;grid-template-columns:1fr auto auto auto;gap:0;align-items:center;padding:10px 10px;border-bottom:1px solid var(--border);transition:background 0.1s">
+      <div>
+        <div style="font-size:0.85rem;color:var(--text);font-weight:500">${esc(c.name)}</div>
+        ${c.hide_company || c.hide_employees || c.hide_contact_info ? `<div style="margin-top:3px">${
+          c.hide_company ? '<span style="font-family:var(--mono);font-size:0.55rem;padding:1px 6px;border-radius:8px;background:rgba(224,90,78,0.12);color:var(--red);border:1px solid rgba(224,90,78,0.25);margin-right:4px">hidden</span>' : ''
+        }${
+          c.hide_employees ? '<span style="font-family:var(--mono);font-size:0.55rem;padding:1px 6px;border-radius:8px;background:rgba(245,166,35,0.1);color:var(--amber);border:1px solid rgba(245,166,35,0.2);margin-right:4px">employees</span>' : ''
+        }${
+          c.hide_contact_info ? '<span style="font-family:var(--mono);font-size:0.55rem;padding:1px 6px;border-radius:8px;background:rgba(74,143,232,0.1);color:var(--blue);border:1px solid rgba(74,143,232,0.2)">contacts</span>' : ''
+        }</div>` : ''}
+      </div>
+      <div style="text-align:center;min-width:90px">
+        <label class="vis-toggle" title="Hide this company from all non-admin users">
+          <input type="checkbox" ${c.hide_company ? 'checked' : ''} onchange="saveVisibility(${c.id})">
+          <span class="vis-slider"></span>
+        </label>
+      </div>
+      <div style="text-align:center;min-width:100px">
+        <label class="vis-toggle" title="Hide employee list when company is expanded">
+          <input type="checkbox" ${c.hide_employees ? 'checked' : ''} onchange="saveVisibility(${c.id})">
+          <span class="vis-slider"></span>
+        </label>
+      </div>
+      <div style="text-align:center;min-width:110px">
+        <label class="vis-toggle" title="Hide all phone/email contact info">
+          <input type="checkbox" ${c.hide_contact_info ? 'checked' : ''} onchange="saveVisibility(${c.id})">
+          <span class="vis-slider"></span>
+        </label>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function saveVisibility(companyId) {
+  const row = document.querySelector(`.vis-row[data-id="${companyId}"]`);
+  const checkboxes = row.querySelectorAll('input[type="checkbox"]');
+  const [hide_company, hide_employees, hide_contact_info] = [...checkboxes].map(cb => cb.checked);
+
+  const res = await fetch(`/api/company/${companyId}/visibility`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hide_company, hide_employees, hide_contact_info })
+  });
+
+  if (res.ok) {
+    // Update local data
+    const entry = _allVisibilityCompanies.find(c => c.id === companyId);
+    if (entry) {
+      entry.hide_company = hide_company;
+      entry.hide_employees = hide_employees;
+      entry.hide_contact_info = hide_contact_info;
+    }
+    // Re-render just this row's badges
+    const q = document.getElementById('visibility-search').value.toLowerCase();
+    const filtered = q ? _allVisibilityCompanies.filter(c => c.name.toLowerCase().includes(q)) : _allVisibilityCompanies;
+    renderVisibilityList(filtered);
+    showStatus('visibility-status', 'success', 'Visibility updated.');
+  } else {
+    showStatus('visibility-status', 'error', 'Failed to update visibility.');
+  }
 }
 
 async function loadAccessRequests() {
