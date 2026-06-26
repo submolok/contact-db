@@ -1126,6 +1126,21 @@ tr.expanded td { background: rgba(245,166,35,0.04); }
   line-height: 1;
 }
 .active-tag button:hover { color: #fff; }
+
+/* ── NOTE TYPE BADGE ─────────────────────────────────────────────────────── */
+.note-type-badge {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  padding: 1px 5px;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+  margin-left: 6px;
+  opacity: 0.85;
+  vertical-align: middle;
+}
+.note-type-meeting  { color: var(--blue); }
+.note-type-follow-up { color: var(--amber); }
+.note-type-intel    { color: var(--green); }
 </style>
 </head>
 <body class="dark">
@@ -1846,6 +1861,9 @@ async function loadExpandRow(id) {
       ${(company.emails||[]).length ? `<div class="expand-label" style="margin-top:8px">Company Emails</div>
       <div>${(company.emails||[]).map(e =>`<a href="mailto:${escHtml(e)}" style="display:block;font-family:var(--mono);font-size:.7rem;color:var(--blue)">${escHtml(e)}</a>`).join('')}</div>` : ''}
       ${hiddenContactNote}
+    </div>
+    <div style="grid-column:1/-1;border-top:1px solid var(--border);padding-top:10px;margin-top:4px;display:flex;justify-content:flex-end">
+      <button onclick="openCompanyNotesModal(${id})" style="background:none;border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.62rem;padding:5px 12px;border-radius:2px;cursor:pointer;letter-spacing:0.06em;transition:all 0.15s" onmouseover="this.style.color='var(--amber)';this.style.borderColor='var(--amber-dim)'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--border2)'">📝 Company Notes</button>
     </div>
   `;
 }
@@ -2766,6 +2784,12 @@ async function togglePersonNotes(personId, labelEl) {
           <button onclick="showAddNote(${personId})" id="btn-add-note-${personId}" style="background:none;border:1px solid var(--border2);color:var(--text3);font-family:var(--mono);font-size:0.6rem;padding:4px 10px;border-radius:2px;cursor:pointer;letter-spacing:0.08em;transition:all 0.15s" onmouseover="this.style.color='var(--amber)';this.style.borderColor='var(--amber-dim)'" onmouseout="this.style.color='var(--text3)';this.style.borderColor='var(--border2)'">+ Add Note</button>
           <div id="add-note-form-${personId}" style="display:none;margin-top:8px">
             <textarea id="add-note-input-${personId}" style="width:100%;background:var(--bg2);border:1px solid var(--amber-dim);border-radius:3px;color:var(--text);font-family:var(--sans);font-size:0.82rem;padding:6px;resize:vertical;min-height:60px;outline:none"></textarea>
+            <select id="add-note-type-${personId}" style="width:100%;margin-top:6px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.7rem;padding:6px 8px;border-radius:2px;outline:none">
+              <option value="general">General</option>
+              <option value="meeting">Meeting</option>
+              <option value="follow-up">Follow-up</option>
+              <option value="intel">Intel</option>
+            </select>
             ${(currentRole === 'admin' || currentRole === 'superadmin') ? `
             <select id="add-note-visibility-${personId}" style="width:100%;margin-top:6px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.7rem;padding:6px 8px;border-radius:2px;outline:none">
               <option value="all">Visible to all</option>
@@ -2790,12 +2814,21 @@ async function togglePersonNotes(personId, labelEl) {
 }
 
 // ── NOTE CARDS ────────────────────────────────────────────────────────────
+function noteTypeBadge(type) {
+  if (!type || type === 'general') return '';
+  const labels = { meeting: 'Meeting', 'follow-up': 'Follow-up', intel: 'Intel' };
+  return `<span class="note-type-badge note-type-${type}">${labels[type] || type}</span>`;
+}
+
 function renderNoteCard(n, containerId, reloadFn) {
   const isOwner = n.username === currentUsername;
   return `
     <div id="note-card-${n.id}" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:10px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <span style="font-family:var(--mono);font-size:0.62rem;color:var(--amber)">${escHtml(n.username)}</span>
+        <div style="display:flex;align-items:center">
+          <span style="font-family:var(--mono);font-size:0.62rem;color:var(--amber)">${escHtml(n.username)}</span>
+          ${noteTypeBadge(n.note_type)}
+        </div>
         <div style="display:flex;align-items:center;gap:8px">
           <span style="font-family:var(--mono);font-size:0.58rem;color:var(--text3)">${n.created_at.split('T')[0]}</span>
           ${isOwner ? `<button onclick="editNote(${n.id}, '${containerId}', ${reloadFn})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:0.8rem;padding:0;line-height:1" title="Edit">✏️</button>` : ''}
@@ -2867,7 +2900,7 @@ async function submitAddNote(personId) {
     const res = await fetch(`/api/people/${personId}/notes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ notes: note, visibility: document.getElementById(`add-note-visibility-${personId}`)?.value || 'all' })
+      body: JSON.stringify({ notes: note, note_type: document.getElementById(`add-note-type-${personId}`)?.value || 'general', visibility: document.getElementById(`add-note-visibility-${personId}`)?.value || 'all' })
     });
     if (!res.ok) throw new Error('Failed to save');
 
@@ -2892,6 +2925,12 @@ async function submitAddNote(personId) {
         <button onclick="showAddNote(${personId})" id="btn-add-note-${personId}" style="background:none;border:1px solid var(--border2);color:var(--text3);font-family:var(--mono);font-size:0.6rem;padding:4px 10px;border-radius:2px;cursor:pointer;letter-spacing:0.08em">+ Add Note</button>
         <div id="add-note-form-${personId}" style="display:none;margin-top:8px">
           <textarea id="add-note-input-${personId}" style="width:100%;background:var(--bg2);border:1px solid var(--amber-dim);border-radius:3px;color:var(--text);font-family:var(--sans);font-size:0.82rem;padding:6px;resize:vertical;min-height:60px;outline:none"></textarea>
+          <select id="add-note-type-${personId}" style="width:100%;margin-top:6px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.7rem;padding:6px 8px;border-radius:2px;outline:none">
+              <option value="general">General</option>
+              <option value="meeting">Meeting</option>
+              <option value="follow-up">Follow-up</option>
+              <option value="intel">Intel</option>
+            </select>
           ${currentRole === 'admin' ? `
           <select id="add-note-visibility-${personId}" style="width:100%;margin-top:6px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.7rem;padding:6px 8px;border-radius:2px;outline:none">
             <option value="all">Visible to all</option>
@@ -2907,6 +2946,151 @@ async function submitAddNote(personId) {
   } catch(e) {
     alert('Error saving note: ' + e.message);
   }
+}
+
+// ── COMPANY NOTES MODAL ───────────────────────────────────────────────────
+
+async function openCompanyNotesModal(companyId) {
+  const company = allCompanies.find(c => c.id === companyId);
+  const companyName = company ? company.name : '';
+
+  const res = await fetch(`/api/company/${companyId}/notes`);
+  if (!res.ok) { alert('Failed to load company notes.'); return; }
+  const { notes, hidden_count } = await res.json();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'company-notes-overlay';
+  overlay.onclick = e => { if (e.target === overlay) closeCompanyNotesModal(); };
+
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:560px;max-height:80vh;display:flex;flex-direction:column;padding:0;overflow:hidden">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+        <div>
+          <div class="modal-title" style="font-size:1rem">${escHtml(companyName)}</div>
+          <div style="font-family:var(--mono);font-size:0.58rem;color:var(--text3);letter-spacing:0.1em;text-transform:uppercase;margin-top:2px">Company Notes</div>
+        </div>
+        <button onclick="closeCompanyNotesModal()" style="background:none;border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.65rem;padding:4px 10px;border-radius:2px;cursor:pointer">✕</button>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:16px 20px" id="company-notes-body">
+        ${renderCompanyNotesList(notes, hidden_count)}
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid var(--border);flex-shrink:0">
+        <textarea id="company-note-input" style="width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);font-family:var(--sans);font-size:0.82rem;padding:8px;border-radius:2px;resize:vertical;min-height:60px;outline:none;transition:border-color 0.15s" placeholder="Add a company note…"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+          <select id="company-note-type" style="background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.7rem;padding:5px 8px;border-radius:2px;outline:none">
+            <option value="general">General</option>
+            <option value="intel">Intel</option>
+          </select>
+          ${(currentRole === 'admin' || currentRole === 'superadmin') ? `
+          <select id="company-note-visibility" style="background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.7rem;padding:5px 8px;border-radius:2px;outline:none">
+            <option value="all">Visible to all</option>
+            <option value="admin">Admin only</option>
+          </select>` : ''}
+          <button onclick="submitCompanyNote(${companyId})" style="margin-left:auto;padding:6px 18px;background:var(--amber);color:#000;border:none;border-radius:2px;font-family:var(--cond);font-weight:700;font-size:0.8rem;cursor:pointer">Save</button>
+        </div>
+        <div id="company-note-status" style="display:none;font-family:var(--mono);font-size:0.65rem;margin-top:6px;color:var(--red)"></div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+}
+
+function renderCompanyNotesList(notes, hidden_count) {
+  let html = '';
+  if (hidden_count > 0) {
+    html += `<div style="background:var(--bg);border:1px solid var(--border2);border-radius:3px;padding:6px 10px;margin-bottom:8px;display:flex;align-items:center;gap:6px">
+      <span>🔒</span>
+      <span style="font-family:var(--mono);font-size:0.6rem;color:var(--text3)">${hidden_count} admin note${hidden_count !== 1 ? 's' : ''} hidden</span>
+    </div>`;
+  }
+  if (!notes.length && !hidden_count) {
+    return html + '<div style="font-family:var(--mono);font-size:0.7rem;color:var(--text3);text-align:center;padding:20px 0">No company notes yet.</div>';
+  }
+  html += notes.map(n => `
+    <div id="company-note-card-${n.id}" style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="display:flex;align-items:center">
+          <span style="font-family:var(--mono);font-size:0.62rem;color:var(--amber)">${escHtml(n.username)}</span>
+          ${noteTypeBadge(n.note_type)}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-family:var(--mono);font-size:0.58rem;color:var(--text3)">${n.created_at.split('T')[0]}</span>
+          ${n.username === currentUsername ? `<button onclick="editCompanyNote(${n.id})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:0.8rem;padding:0;line-height:1" title="Edit">✏️</button>` : ''}
+        </div>
+      </div>
+      <div id="company-note-text-${n.id}" style="font-size:0.82rem;color:var(--text2);line-height:1.4">${escHtml(n.note)}</div>
+      <div id="company-note-edit-${n.id}" style="display:none">
+        <textarea id="company-note-edit-input-${n.id}" style="width:100%;background:var(--bg2);border:1px solid var(--amber-dim);border-radius:3px;color:var(--text);font-family:var(--sans);font-size:0.82rem;padding:6px;resize:vertical;outline:none;margin-top:4px">${escHtml(n.note)}</textarea>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button onclick="saveCompanyNoteEdit(${n.id})" style="flex:1;padding:5px;background:var(--amber);color:#000;border:none;border-radius:3px;font-family:var(--cond);font-weight:700;font-size:0.8rem;cursor:pointer">Save</button>
+          <button onclick="cancelCompanyNoteEdit(${n.id})" style="padding:5px 10px;background:none;border:1px solid var(--border2);color:var(--text2);border-radius:3px;font-family:var(--mono);font-size:0.7rem;cursor:pointer">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+  return html;
+}
+
+async function submitCompanyNote(companyId) {
+  const note = document.getElementById('company-note-input').value.trim();
+  if (!note) return;
+  const note_type = document.getElementById('company-note-type').value;
+  const visibility = document.getElementById('company-note-visibility')?.value || 'all';
+
+  try {
+    const res = await fetch(`/api/company/${companyId}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note, note_type, visibility })
+    });
+    if (!res.ok) throw new Error('Failed to save');
+    document.getElementById('company-note-input').value = '';
+    const notesRes = await fetch(`/api/company/${companyId}/notes`);
+    const { notes, hidden_count } = await notesRes.json();
+    document.getElementById('company-notes-body').innerHTML = renderCompanyNotesList(notes, hidden_count);
+  } catch(e) {
+    const s = document.getElementById('company-note-status');
+    s.style.display = 'block';
+    s.textContent = 'Error saving note';
+  }
+}
+
+function editCompanyNote(noteId) {
+  document.getElementById(`company-note-text-${noteId}`).style.display = 'none';
+  document.getElementById(`company-note-edit-${noteId}`).style.display = 'block';
+  const inp = document.getElementById(`company-note-edit-input-${noteId}`);
+  inp.focus();
+  inp.setSelectionRange(inp.value.length, inp.value.length);
+}
+
+function cancelCompanyNoteEdit(noteId) {
+  document.getElementById(`company-note-text-${noteId}`).style.display = 'block';
+  document.getElementById(`company-note-edit-${noteId}`).style.display = 'none';
+}
+
+async function saveCompanyNoteEdit(noteId) {
+  const note = document.getElementById(`company-note-edit-input-${noteId}`).value.trim();
+  try {
+    const res = await fetch(`/api/notes/company/${noteId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    if (data.deleted) {
+      document.getElementById(`company-note-card-${noteId}`).remove();
+    } else {
+      document.getElementById(`company-note-text-${noteId}`).textContent = note;
+      cancelCompanyNoteEdit(noteId);
+    }
+  } catch(e) { alert(e.message); }
+}
+
+function closeCompanyNotesModal() {
+  document.getElementById('company-notes-overlay')?.remove();
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────

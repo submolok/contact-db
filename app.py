@@ -699,6 +699,7 @@ def api_people(company_id):
     people = get_people_for_company(company_id)
     result = [{
         "id": p["id"],
+        "company_id": company_id, 
         "name": p["name"],
         "role": p["role"],
         "phones": [] if hide_contact_info else safe_json(p["phones"]),
@@ -714,14 +715,14 @@ def api_stats():
     return jsonify(get_stats())
 
 
-@app.route("/api/company/<int:company_id>/notes", methods=["POST"])
-@login_required
-def save_notes(company_id):
-    notes = (request.json or {}).get("notes", "")
-    with db_ctx() as (conn, cur):
-        cur.execute("UPDATE companies SET notes = %s WHERE id = %s", (notes, company_id))
-        conn.commit()
-    return jsonify({"ok": True})
+# @app.route("/api/company/<int:company_id>/notes", methods=["POST"])
+# @login_required
+# def save_notes(company_id):
+#     notes = (request.json or {}).get("notes", "")
+#     with db_ctx() as (conn, cur):
+#         cur.execute("UPDATE companies SET notes = %s WHERE id = %s", (notes, company_id))
+#         conn.commit()
+#     return jsonify({"ok": True})
 
 @app.route("/api/company/<int:company_id>/domain", methods=["POST"])
 @admin_required
@@ -1466,11 +1467,40 @@ def api_people_search():
                 WHERE e.products ILIKE %s
                 ORDER BY p.name
             """, (f"%{q}%",))
+        elif field == "company_notes":
+            is_admin = session.get("role") in ("admin", "superadmin")
+            if is_admin:
+                cur.execute("""
+                    SELECT DISTINCT ON (c.id)
+                        p.id, p.name, p.role, p.phones, p.emails,
+                        c.id as company_id, c.name as company_name,
+                        cn.note as matched_note, cn.created_at, u.username
+                    FROM people p
+                    JOIN companies c ON c.id = p.company_id
+                    JOIN company_notes cn ON cn.company_id = c.id
+                    JOIN users u ON u.id = cn.user_id
+                    WHERE cn.note ILIKE %s
+                    ORDER BY c.id, p.name
+                """, (f"%{q}%",))
+            else:
+                cur.execute("""
+                    SELECT DISTINCT ON (c.id)
+                        p.id, p.name, p.role, p.phones, p.emails,
+                        c.id as company_id, c.name as company_name,
+                        cn.note as matched_note, cn.created_at, u.username
+                    FROM people p
+                    JOIN companies c ON c.id = p.company_id
+                    JOIN company_notes cn ON cn.company_id = c.id
+                    JOIN users u ON u.id = cn.user_id
+                    WHERE cn.note ILIKE %s AND cn.visibility = 'all'
+                    ORDER BY c.id, p.name
+                """, (f"%{q}%",))
 
         rows = cur.fetchall()
 
     return jsonify([{
         "id": r["id"],
+        "company_id": r.get("company_id"),
         "name": r["name"],
         "role": r["role"],
         "phones": safe_json(r["phones"]),
@@ -1892,6 +1922,83 @@ def api_admin_update_person(person_id):
         ))
         conn.commit()
     return jsonify({"ok": True})
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Company notes
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/company/<int:company_id>/notes", methods=["GET"])
+@login_required
+def get_company_notes(company_id):
+    role = session.get("role")
+    with db_ctx() as (_, cur):
+        if role in ("admin", "superadmin"):
+            cur.execute("""
+                SELECT cn.id, cn.note, cn.note_type, cn.created_at, cn.visibility, u.username
+                FROM company_notes cn
+                JOIN users u ON u.id = cn.user_id
+                WHERE cn.company_id = %s
+                ORDER BY cn.created_at DESC
+            """, (company_id,))
+            notes = [dict(r) for r in cur.fetchall()]
+            hidden_count = 0
+        else:
+            cur.execute("""
+                SELECT cn.id, cn.note, cn.note_type, cn.created_at, cn.visibility, u.username
+                FROM company_notes cn
+                JOIN users u ON u.id = cn.user_id
+                WHERE cn.company_id = %s AND cn.visibility = 'all'
+                ORDER BY cn.created_at DESC
+            """, (company_id,))
+            notes = [dict(r) for r in cur.fetchall()]
+            cur.execute("""
+                SELECT COUNT(*) as count FROM company_notes
+                WHERE company_id = %s AND visibility = 'admin'
+            """, (company_id,))
+            hidden_count = cur.fetchone()["count"]
+    return jsonify({"notes": notes, "hidden_count": hidden_count})
+
+
+@app.route("/api/company/<int:company_id>/notes", methods=["POST"])
+@login_required
+def save_company_note(company_id):
+    data = request.json or {}
+    note = data.get("note", "").strip()
+    note_type = data.get("note_type", "general")
+    visibility = data.get("visibility", "all")
+    if not note:
+        return jsonify({"error": "no note provided"}), 400
+    if note_type not in ("intel", "general"):
+        note_type = "general"
+    if session.get("role") not in ("admin", "superadmin"):
+        visibility = "all"
+    with db_ctx() as (conn, cur):
+        cur.execute("""
+            INSERT INTO company_notes (company_id, user_id, note, note_type, visibility, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (company_id, session["user_id"], note, note_type, visibility, datetime.now().isoformat()))
+        conn.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/notes/company/<int:note_id>", methods=["PATCH"])
+@login_required
+def edit_company_note(note_id):
+    data = request.json or {}
+    note = data.get("note", "").strip()
+    with db_ctx() as (conn, cur):
+        cur.execute("SELECT user_id FROM company_notes WHERE id = %s", (note_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "note not found"}), 404
+        if row["user_id"] != session["user_id"]:
+            return jsonify({"error": "not your note"}), 403
+        if not note:
+            cur.execute("DELETE FROM company_notes WHERE id = %s", (note_id,))
+        else:
+            cur.execute("UPDATE company_notes SET note = %s WHERE id = %s", (note, note_id))
+        conn.commit()
+    return jsonify({"ok": True, "deleted": not note})
 
 
 if __name__ == "__main__":
