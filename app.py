@@ -1782,6 +1782,117 @@ def api_set_visibility(company_id):
         conn.commit()
     return jsonify({"ok": True})
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  Admin record editing
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/admin/company/<int:company_id>", methods=["GET"])
+@admin_required
+def api_admin_get_company(company_id):
+    with db_ctx() as (_, cur):
+        cur.execute("SELECT * FROM companies WHERE id = %s", (company_id,))
+        company = cur.fetchone()
+        if not company:
+            return jsonify({"error": "not found"}), 404
+        cur.execute("SELECT * FROM enrichment WHERE contact_id = %s", (company_id,))
+        enrichment = cur.fetchone()
+        cur.execute("SELECT category FROM company_categories WHERE company_id = %s ORDER BY category", (company_id,))
+        categories = [r["category"] for r in cur.fetchall()]
+
+    return jsonify({
+        "id":               company["id"],
+        "name":             company["name"] or "",
+        "phones":           safe_json(company["phones"]),
+        "emails":           safe_json(company.get("emails")),
+        "addresses":        safe_json(company["addresses"]),
+        "websites":         safe_json(company["websites"]),
+        "primary_industry": enrichment["primary_industry"] if enrichment else "",
+        "sub_industry":     enrichment["sub_industry"] if enrichment else "",
+        "company_type":     safe_json(enrichment["company_type"]) if enrichment else [],
+        "products":         safe_json(enrichment["products"]) if enrichment else [],
+        "markets":          safe_json(enrichment["markets"]) if enrichment else [],
+        "categories":       categories,
+    })
+
+
+@app.route("/api/admin/company/<int:company_id>", methods=["PATCH"])
+@admin_required
+def api_admin_update_company(company_id):
+    data = request.json or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "name cannot be empty"}), 400
+
+    with db_ctx() as (conn, cur):
+        cur.execute("""
+            UPDATE companies
+            SET name = %s, phones = %s, emails = %s, addresses = %s, websites = %s
+            WHERE id = %s
+        """, (
+            name,
+            json.dumps(data.get("phones", [])),
+            json.dumps(data.get("emails", [])),
+            json.dumps(data.get("addresses", [])),
+            json.dumps(data.get("websites", [])),
+            company_id,
+        ))
+
+        cur.execute("SELECT id FROM enrichment WHERE contact_id = %s", (company_id,))
+        if cur.fetchone():
+            cur.execute("""
+                UPDATE enrichment
+                SET primary_industry = %s, sub_industry = %s,
+                    company_type = %s, products = %s, markets = %s
+                WHERE contact_id = %s
+            """, (
+                data.get("primary_industry") or None,
+                data.get("sub_industry") or None,
+                json.dumps(data.get("company_type", [])),
+                json.dumps(data.get("products", [])),
+                json.dumps(data.get("markets", [])),
+                company_id,
+            ))
+        else:
+            cur.execute("""
+                INSERT INTO enrichment (contact_id, primary_industry, sub_industry, company_type, products, markets)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (
+                company_id,
+                data.get("primary_industry") or None,
+                data.get("sub_industry") or None,
+                json.dumps(data.get("company_type", [])),
+                json.dumps(data.get("products", [])),
+                json.dumps(data.get("markets", [])),
+            ))
+        conn.commit()
+
+    save_categories(company_id, data.get("categories", []))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/person/<int:person_id>", methods=["PATCH"])
+@admin_required
+def api_admin_update_person(person_id):
+    data = request.json or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "name cannot be empty"}), 400
+
+    with db_ctx() as (conn, cur):
+        cur.execute("""
+            UPDATE people
+            SET name = %s, role = %s, phones = %s, emails = %s
+            WHERE id = %s
+        """, (
+            name,
+            data.get("role") or None,
+            json.dumps(data.get("phones", [])),
+            json.dumps(data.get("emails", [])),
+            person_id,
+        ))
+        conn.commit()
+    return jsonify({"ok": True})
+
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5050)

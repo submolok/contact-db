@@ -343,6 +343,159 @@ html, body {
 .vis-toggle input:checked + .vis-slider { background: var(--red); }
 .vis-toggle input:checked + .vis-slider::before { transform: translateX(16px); background: #fff; }
 .vis-row:hover { background: var(--bg3); }
+
+/* ── modal ───────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  width: 100%;
+  max-width: 640px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.modal-title {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+.modal-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.modal-section {
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin: 20px 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-section:first-child { margin-top: 0; }
+.form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+
+/* ── tag input ───────────────────────────────────────────────────────────── */
+.tag-input-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  padding: 5px 8px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  min-height: 36px;
+  cursor: text;
+}
+.tag-input-wrap:focus-within { border-color: var(--amber-dim); }
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  background: rgba(245,166,35,0.1);
+  border: 1px solid rgba(245,166,35,0.25);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+.tag button {
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0;
+}
+.tag button:hover { color: var(--red); }
+.tag-input-inner {
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  outline: none;
+  min-width: 70px;
+  flex: 1;
+}
+
+/* ── category checkboxes ─────────────────────────────────────────────────── */
+.cat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.cat-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  font-size: 0.78rem;
+  color: var(--text2);
+  user-select: none;
+}
+.cat-item:hover { border-color: var(--border2); }
+.cat-item input { accent-color: var(--amber); flex-shrink: 0; }
+.cat-item.selected { border-color: var(--amber-dim); background: rgba(245,166,35,0.06); color: var(--text); }
+
+/* ── person edit rows ────────────────────────────────────────────────────── */
+.person-edit-row {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.person-edit-header {
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  background: var(--bg2);
+  transition: background 0.1s;
+}
+.person-edit-header:hover { background: var(--bg3); }
+.person-edit-form {
+  display: none;
+  padding: 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.person-edit-form.open { display: block; }
+
 </style>
 </head>
 <body>
@@ -368,6 +521,7 @@ html, body {
       <span id="request-badge" style="display:none;background:var(--red);color:#fff;font-family:var(--mono);font-size:0.55rem;padding:1px 5px;border-radius:8px;margin-left:6px">0</span>
     </button>
     <button class="admin-tab" data-section="visibility" onclick="switchAdminTab('visibility')">Visibility</button>
+    <button class="admin-tab" data-section="edit" onclick="switchAdminTab('edit')">Edit Records</button>
   </div>
   <div class="page-sub">USER MANAGEMENT</div>
 
@@ -468,6 +622,29 @@ html, body {
       </div>
     </div>
     <div class="status-msg" id="visibility-status" style="margin-top:-16px;margin-bottom:16px"></div>
+  </div>
+  <!-- EDIT RECORDS SECTION -->
+  <div id="section-edit" style="display:none">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Edit Records</div>
+        <span id="edit-count" style="font-family:var(--mono);font-size:0.62rem;color:var(--text3)"></span>
+      </div>
+      <div class="card-body" style="padding-bottom:8px">
+        <input
+          class="form-input"
+          type="text"
+          id="edit-search"
+          placeholder="Search companies…"
+          oninput="filterEditList()"
+          style="width:100%;margin-bottom:16px"
+        >
+        <div id="edit-list" style="border:1px solid var(--border);border-radius:3px;max-height:560px;overflow-y:auto">
+          <div style="text-align:center;padding:24px;color:var(--text3);font-family:var(--mono);font-size:0.72rem">Loading…</div>
+        </div>
+      </div>
+    </div>
+    <div class="status-msg" id="edit-status" style="margin-top:-16px;margin-bottom:16px"></div>
   </div>
 </div>
 
@@ -571,6 +748,8 @@ function switchAdminTab(section) {
   document.getElementById('section-users').style.display = section === 'users' ? 'block' : 'none';
   document.getElementById('section-requests').style.display = section === 'requests' ? 'block' : 'none';
   document.getElementById('section-visibility').style.display = section === 'visibility' ? 'block' : 'none';
+  document.getElementById('section-edit').style.display = section === 'edit' ? 'block' : 'none';
+  if (section === 'edit') loadEditSection();
   if (section === 'requests') loadAccessRequests();
   if (section === 'visibility') loadVisibility();
 }
@@ -786,6 +965,347 @@ async function resolveRequest(requestId, action) {
 
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Edit Records ──────────────────────────────────────────────────────────────
+
+let _editCompanies = [];
+let _tagInstances = {};
+let _canonicalCategories = [];
+
+async function loadEditSection() {
+  const container = document.getElementById('edit-list');
+  container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3);font-family:var(--mono);font-size:0.72rem">Loading…</div>';
+
+  const [companiesRes, catsRes] = await Promise.all([
+    fetch('/api/companies/list'),
+    fetch('/api/flagged/categories'),
+  ]);
+  _editCompanies = await companiesRes.json();
+  _canonicalCategories = await catsRes.json();
+
+  document.getElementById('edit-count').textContent = `${_editCompanies.length} companies`;
+  renderEditList(_editCompanies);
+}
+
+function filterEditList() {
+  const q = document.getElementById('edit-search').value.toLowerCase();
+  const filtered = q ? _editCompanies.filter(c => c.name.toLowerCase().includes(q)) : _editCompanies;
+  renderEditList(filtered);
+}
+
+function renderEditList(companies) {
+  const container = document.getElementById('edit-list');
+  if (!companies.length) {
+    container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3);font-family:var(--mono);font-size:0.72rem">No companies found.</div>';
+    return;
+  }
+  container.innerHTML = companies.map(c => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)">
+      <div style="font-size:0.85rem;color:var(--text);font-weight:500">${esc(c.name)}</div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn" onclick="openCompanyModal(${c.id})">Edit Company</button>
+        <button class="btn" onclick="openPeopleModal(${c.id}, '${esc(c.name)}')">Edit People</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── Tag input ─────────────────────────────────────────────────────────────────
+
+function createTagInput(container, initialValues = []) {
+  let values = initialValues.filter(v => v != null && String(v).trim() !== '');
+
+  function render() {
+    container.className = 'tag-input-wrap';
+    container.innerHTML = '';
+
+    values.forEach((v, i) => {
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.appendChild(document.createTextNode(v + ' '));
+      const btn = document.createElement('button');
+      btn.textContent = '×';
+      btn.title = 'Remove';
+      btn.onclick = () => { values.splice(i, 1); render(); };
+      tag.appendChild(btn);
+      container.appendChild(tag);
+    });
+
+    const inp = document.createElement('input');
+    inp.className = 'tag-input-inner';
+    inp.placeholder = values.length ? '' : 'Type and press Enter…';
+    inp.onkeydown = e => {
+      if ((e.key === 'Enter' || e.key === ',') && inp.value.trim()) {
+        e.preventDefault();
+        values.push(inp.value.trim());
+        render();
+      }
+      if (e.key === 'Backspace' && !inp.value && values.length) {
+        values.pop();
+        render();
+      }
+    };
+    container.appendChild(inp);
+    container.onclick = e => { if (e.target === container) inp.focus(); };
+  }
+
+  render();
+  return { getValues: () => [...values] };
+}
+
+// ── Company modal ─────────────────────────────────────────────────────────────
+
+async function openCompanyModal(companyId) {
+  const res = await fetch(`/api/admin/company/${companyId}`);
+  if (!res.ok) { alert('Failed to load company data.'); return; }
+  const c = await res.json();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.onclick = e => { if (e.target === overlay) closeModal(); };
+
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Edit: ${esc(c.name)}</div>
+        <button class="btn" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-body">
+
+        <div class="modal-section">Basic Info</div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label class="form-label">Company Name</label>
+          <input class="form-input" id="edit-company-name" value="${esc(c.name)}" style="width:100%">
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label">Phones</label>
+            <div id="tag-phones"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Emails</label>
+            <div id="tag-emails"></div>
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label">Websites</label>
+            <div id="tag-websites"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Addresses</label>
+            <div id="tag-addresses"></div>
+          </div>
+        </div>
+
+        <div class="modal-section">Enrichment</div>
+        <div class="form-grid-2" style="margin-bottom:12px">
+          <div class="form-group">
+            <label class="form-label">Primary Industry</label>
+            <input class="form-input" id="edit-industry" value="${esc(c.primary_industry || '')}" style="width:100%">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Sub-industry</label>
+            <input class="form-input" id="edit-sub-industry" value="${esc(c.sub_industry || '')}" style="width:100%">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label class="form-label">Company Type</label>
+          <div id="tag-company-type"></div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label">Products</label>
+            <div id="tag-products"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Markets</label>
+            <div id="tag-markets"></div>
+          </div>
+        </div>
+
+        <div class="modal-section">Categories</div>
+        <div class="cat-grid" id="edit-categories"></div>
+
+      </div>
+      <div class="modal-footer">
+        <div class="status-msg" id="modal-status" style="margin:0;flex:1;display:none"></div>
+        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveCompanyEdit(${c.id})">Save Changes</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  _tagInstances = {
+    phones:      createTagInput(document.getElementById('tag-phones'),       c.phones || []),
+    emails:      createTagInput(document.getElementById('tag-emails'),       c.emails || []),
+    websites:    createTagInput(document.getElementById('tag-websites'),     c.websites || []),
+    addresses:   createTagInput(document.getElementById('tag-addresses'),    c.addresses || []),
+    companyType: createTagInput(document.getElementById('tag-company-type'), c.company_type || []),
+    products:    createTagInput(document.getElementById('tag-products'),     c.products || []),
+    markets:     createTagInput(document.getElementById('tag-markets'),      c.markets || []),
+  };
+
+  const catGrid = document.getElementById('edit-categories');
+  catGrid.innerHTML = _canonicalCategories.map(cat => {
+    const checked = c.categories.includes(cat);
+    return `
+      <label class="cat-item${checked ? ' selected' : ''}">
+        <input type="checkbox" value="${esc(cat)}" ${checked ? 'checked' : ''}
+          onchange="this.closest('.cat-item').classList.toggle('selected', this.checked)">
+        ${esc(cat)}
+      </label>
+    `;
+  }).join('');
+}
+
+async function saveCompanyEdit(companyId) {
+  const categories = [...document.querySelectorAll('#edit-categories input:checked')].map(cb => cb.value);
+  const payload = {
+    name:             document.getElementById('edit-company-name').value.trim(),
+    phones:           _tagInstances.phones.getValues(),
+    emails:           _tagInstances.emails.getValues(),
+    websites:         _tagInstances.websites.getValues(),
+    addresses:        _tagInstances.addresses.getValues(),
+    primary_industry: document.getElementById('edit-industry').value.trim(),
+    sub_industry:     document.getElementById('edit-sub-industry').value.trim(),
+    company_type:     _tagInstances.companyType.getValues(),
+    products:         _tagInstances.products.getValues(),
+    markets:          _tagInstances.markets.getValues(),
+    categories,
+  };
+
+  const res = await fetch(`/api/admin/company/${companyId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const statusEl = document.getElementById('modal-status');
+  if (res.ok) {
+    const entry = _editCompanies.find(c => c.id === companyId);
+    if (entry) entry.name = payload.name;
+    showStatus('modal-status', 'success', 'Saved successfully.');
+    setTimeout(closeModal, 900);
+  } else {
+    const data = await res.json();
+    showStatus('modal-status', 'error', data.error || 'Save failed.');
+  }
+}
+
+// ── People modal ──────────────────────────────────────────────────────────────
+
+async function openPeopleModal(companyId, companyName) {
+  const res = await fetch(`/api/company/${companyId}/people`);
+  if (!res.ok) { alert('Failed to load people.'); return; }
+  const { people = [] } = await res.json();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.onclick = e => { if (e.target === overlay) closeModal(); };
+
+  const peopleHTML = people.length
+    ? people.map(p => `
+        <div class="person-edit-row" id="person-row-${p.id}">
+          <div class="person-edit-header" onclick="togglePersonEdit(${p.id})">
+            <div>
+              <div style="font-size:0.85rem;color:var(--text);font-weight:500">${esc(p.name)}</div>
+              ${p.role ? `<div style="font-family:var(--mono);font-size:0.62rem;color:var(--text3);margin-top:2px">${esc(p.role)}</div>` : ''}
+            </div>
+            <span style="color:var(--text3);font-size:0.8rem" id="person-arrow-${p.id}">▶</span>
+          </div>
+          <div class="person-edit-form" id="person-form-${p.id}">
+            <div class="form-grid-2" style="margin-bottom:12px">
+              <div class="form-group">
+                <label class="form-label">Name</label>
+                <input class="form-input" id="person-name-${p.id}" value="${esc(p.name)}" style="width:100%">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Role</label>
+                <input class="form-input" id="person-role-${p.id}" value="${esc(p.role || '')}" style="width:100%">
+              </div>
+            </div>
+            <div class="form-grid-2" style="margin-bottom:14px">
+              <div class="form-group">
+                <label class="form-label">Phones</label>
+                <div id="person-tag-phones-${p.id}"></div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Emails</label>
+                <div id="person-tag-emails-${p.id}"></div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px">
+              <div class="status-msg" id="person-status-${p.id}" style="margin:0;flex:1;display:none"></div>
+              <button class="btn btn-primary" onclick="savePersonEdit(${p.id})">Save</button>
+            </div>
+          </div>
+        </div>
+      `).join('')
+    : '<div style="text-align:center;padding:24px;color:var(--text3);font-family:var(--mono);font-size:0.72rem">No people for this company.</div>';
+
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">People: ${esc(companyName)}</div>
+        <button class="btn" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-body">${peopleHTML}</div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal()">Close</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  _tagInstances = {};
+  people.forEach(p => {
+    _tagInstances[`phones_${p.id}`] = createTagInput(
+      document.getElementById(`person-tag-phones-${p.id}`), p.phones || []
+    );
+    _tagInstances[`emails_${p.id}`] = createTagInput(
+      document.getElementById(`person-tag-emails-${p.id}`), p.emails || []
+    );
+  });
+}
+
+function togglePersonEdit(personId) {
+  const form  = document.getElementById(`person-form-${personId}`);
+  const arrow = document.getElementById(`person-arrow-${personId}`);
+  const opening = !form.classList.contains('open');
+  form.classList.toggle('open', opening);
+  arrow.textContent = opening ? '▼' : '▶';
+}
+
+async function savePersonEdit(personId) {
+  const payload = {
+    name:   document.getElementById(`person-name-${personId}`).value.trim(),
+    role:   document.getElementById(`person-role-${personId}`).value.trim(),
+    phones: _tagInstances[`phones_${personId}`].getValues(),
+    emails: _tagInstances[`emails_${personId}`].getValues(),
+  };
+
+  const res = await fetch(`/api/admin/person/${personId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (res.ok) {
+    showStatus(`person-status-${personId}`, 'success', 'Saved.');
+  } else {
+    const data = await res.json();
+    showStatus(`person-status-${personId}`, 'error', data.error || 'Save failed.');
+  }
+}
+
+function closeModal() {
+  document.querySelector('.modal-overlay')?.remove();
+  _tagInstances = {};
 }
 
 init();
