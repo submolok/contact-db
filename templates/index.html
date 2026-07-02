@@ -2483,21 +2483,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
 });
 
-// Taiga
-
-// async function pushToTaiga(id) {
-//   try {
-//     const res = await fetch(`/api/tasks/${id}/push-taiga`, { method: 'POST' });
-//     const data = await res.json();
-//     if (data.ok) {
-//       window.open(data.url, '_blank');
-//     } else {
-//       alert('Failed to push to Taiga: ' + JSON.stringify(data.error));
-//     }
-//   } catch(e) {
-//     alert('Error: ' + e.message);
-//   }
-// }
 
 // zoho
 async function pushToZoho(id) {

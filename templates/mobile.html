@@ -990,30 +990,94 @@ select.field-input {
         </div>
       </div>
     </div>
-    <!-- Company Notes -->
-    <div id="mobile-company-notes-section" style="margin-top:16px;display:none">
-      <div style="font-family:var(--mono);font-size:0.55rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--amber);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">Company Notes</div>
-      <div id="mobile-company-notes-list" style="margin-bottom:12px"></div>
-      <textarea
-        id="mobile-company-note-input"
-        class="voice-note-textarea"
-        placeholder="Add a company note…"
-        style="margin-top:8px"
-      ></textarea>
-      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-        <select id="mobile-company-note-type" style="background:var(--bg2);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.7rem;padding:6px 10px;border-radius:4px;outline:none">
-          <option value="general">General</option>
-          <option value="intel">Intel</option>
-        </select>
-        <div id="mobile-company-note-visibility-wrap" style="display:none">
-          <select id="mobile-company-note-visibility" style="background:var(--bg2);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.7rem;padding:6px 10px;border-radius:4px;outline:none">
-            <option value="all">Visible to all</option>
-            <option value="admin">Admin only</option>
-          </select>
+    <!-- Company Details -->
+    <div id="mobile-company-details-section" style="margin-top:16px;display:none">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden">
+        <div style="padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleCompanyDetailsCard()">
+          <div>
+            <div style="font-family:var(--cond);font-weight:700;font-size:1rem;color:var(--text)" id="mobile-company-details-name">Company</div>
+            <div style="font-family:var(--mono);font-size:0.58rem;color:var(--text3);letter-spacing:0.1em;text-transform:uppercase">Company Details</div>
+          </div>
+          <span id="mobile-company-details-arrow" style="color:var(--text3);font-size:0.8rem">▶</span>
+        </div>
+        <div id="mobile-company-details-body" style="padding:0 14px 14px;display:none">
+          <div class="result-field" id="mcd-industry-wrap">
+            <div class="result-field-label">Industry</div>
+            <div class="result-field-value" id="mcd-industry"></div>
+          </div>
+          <div class="result-field" id="mcd-type-wrap">
+            <div class="result-field-label">Company Type</div>
+            <div class="result-field-value" id="mcd-type"></div>
+          </div>
+          <div class="result-field" id="mcd-products-wrap">
+            <div class="result-field-label">Products & Services</div>
+            <div class="result-field-value" id="mcd-products"></div>
+          </div>
+          <div class="result-field" id="mcd-markets-wrap">
+            <div class="result-field-label">Markets</div>
+            <div class="result-field-value" id="mcd-markets"></div>
+          </div>
+          <div class="result-field" id="mcd-website-wrap">
+            <div class="result-field-label">Website</div>
+            <div class="result-field-value" id="mcd-websites"></div>
+          </div>
+          <div class="result-field" id="mcd-address-wrap">
+            <div class="result-field-label">Address</div>
+            <div class="result-field-value" id="mcd-addresses"></div>
+          </div>
+          <div class="result-field" id="mcd-phone-wrap">
+            <div class="result-field-label">Company Phone</div>
+            <div class="result-field-value" id="mcd-phones"></div>
+          </div>
+          <div class="result-field" id="mcd-email-wrap">
+            <div class="result-field-label">Company Email</div>
+            <div class="result-field-value" id="mcd-emails"></div>
+          </div>
+          <div class="result-field" id="mcd-info-wrap">
+            <div class="result-field-label">Company Info</div>
+            <div class="result-field-value" id="mcd-info"></div>
+          </div>
+          <div id="mcd-hidden-note" style="display:none;align-items:center;gap:6px;font-family:var(--mono);font-size:0.62rem;color:var(--text3);padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:3px">
+            <span>🔒</span> Contact information is restricted
+          </div>
         </div>
       </div>
-      <button class="btn-save-note" onclick="saveMobileCompanyNote()" style="margin-top:8px;width:100%">💾 Save Company Note</button>
-      <div id="mobile-company-note-status" style="display:none;font-family:var(--mono);font-size:0.65rem;margin-top:6px;color:var(--red)"></div>
+    </div>
+
+    <!-- Company Notes -->
+    <div id="mobile-company-notes-section" style="margin-top:16px;display:none">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden">
+        <div style="padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleCompanyNotesCard()">
+          <div>
+            <div style="font-family:var(--cond);font-weight:700;font-size:1rem;color:var(--text)">Company Notes</div>
+            <div style="font-family:var(--mono);font-size:0.58rem;color:var(--text3);letter-spacing:0.1em;text-transform:uppercase" id="mobile-company-notes-count"></div>
+          </div>
+          <span id="mobile-company-notes-arrow" style="color:var(--text3);font-size:0.8rem">▶</span>
+        </div>
+        <div id="mobile-company-notes-body" style="padding:0 14px 14px;display:none">
+          <div id="mobile-company-notes-list" style="margin-bottom:12px"></div>
+          <textarea
+            id="mobile-company-note-input"
+            class="voice-note-textarea"
+            placeholder="Add a company note…"
+            style="margin-top:8px"
+          ></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <select id="mobile-company-note-type" style="background:var(--bg2);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.7rem;padding:6px 10px;border-radius:4px;outline:none">
+              <option value="general">General</option>
+              <option value="intel">Intel</option>
+            </select>
+            <div id="mobile-company-note-visibility-wrap" style="display:none">
+              <select id="mobile-company-note-visibility" style="background:var(--bg2);border:1px solid var(--border2);color:var(--text2);font-family:var(--mono);font-size:0.7rem;padding:6px 10px;border-radius:4px;outline:none">
+                <option value="all">Visible to all</option>
+                <option value="admin">Admin only</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn-save-note" onclick="saveMobileCompanyNote()" style="margin-top:8px;width:100%">💾 Save Company Note</button>
+          <div id="mobile-company-note-status" style="display:none;font-family:var(--mono);font-size:0.65rem;margin-top:6px;color:var(--red)"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1626,7 +1690,15 @@ async function openPersonView(person) {
 
   loadPersonNotes(person.id);
   document.getElementById('mobile-company-notes-section').style.display = 'none';
-  if (person.company_id) loadMobileCompanyNotes(person.company_id);
+  document.getElementById('mobile-company-notes-body').style.display = 'none';
+  document.getElementById('mobile-company-notes-arrow').textContent = '▶';
+  document.getElementById('mobile-company-details-section').style.display = 'none';
+  document.getElementById('mobile-company-details-body').style.display = 'none';
+  document.getElementById('mobile-company-details-arrow').textContent = '▶';
+  if (person.company_id) {
+    loadMobileCompanyNotes(person.company_id);
+    loadMobileCompanyDetails(person.company_id);
+  }
 }
 
 async function loadPersonNotes(personId) {
@@ -2199,8 +2271,74 @@ function filterByAuthor(username) {
   }
 }
 
+// ── COMPANY DETAILS (MOBILE) ─────────────────────────────────────────────
+function toggleCompanyDetailsCard() {
+  const body = document.getElementById('mobile-company-details-body');
+  const arrow = document.getElementById('mobile-company-details-arrow');
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  arrow.textContent = isOpen ? '▶' : '▼';
+}
+
+async function loadMobileCompanyDetails(companyId) {
+  const section = document.getElementById('mobile-company-details-section');
+  try {
+    const res = await fetch(`/api/company/${companyId}`);
+    const data = await res.json();
+    if (data.hidden) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = 'block';
+    renderMobileCompanyDetails(data);
+  } catch(e) {
+    section.style.display = 'none';
+  }
+}
+
+function renderMobileCompanyDetails(company) {
+  document.getElementById('mobile-company-details-name').textContent = company.name || '—';
+
+  const industryParts = [];
+  if (company.primary_industry) industryParts.push(company.primary_industry);
+  if (company.sub_industry) industryParts.push(company.sub_industry);
+  setField('mcd-industry', 'mcd-industry-wrap', esc(industryParts.join(' / ')));
+
+  setField('mcd-type', 'mcd-type-wrap', esc((company.company_type || []).join(', ')));
+  setField('mcd-products', 'mcd-products-wrap', esc((company.products || []).join(', ')));
+  setField('mcd-markets', 'mcd-markets-wrap', esc((company.markets || []).join(', ')));
+
+  setField('mcd-websites', 'mcd-website-wrap',
+    (company.websites || []).filter(Boolean).map(w =>
+      `<a href="${w.startsWith('http')?w:'https://'+w}" style="color:var(--blue)">${esc(w)}</a>`
+    ).join('<br>'));
+
+  setField('mcd-addresses', 'mcd-address-wrap',
+    (company.addresses || []).filter(Boolean).map(esc).join('\n'));
+
+  setField('mcd-phones', 'mcd-phone-wrap',
+    (company.phones || []).filter(Boolean).map(esc).join('\n'));
+
+  setField('mcd-emails', 'mcd-email-wrap',
+    (company.emails || []).filter(Boolean).map(e =>
+      `<a href="mailto:${esc(e)}" style="color:var(--blue)">${esc(e)}</a>`
+    ).join('<br>'));
+
+  setField('mcd-info', 'mcd-info-wrap', esc(company.company_info || ''));
+
+  document.getElementById('mcd-hidden-note').style.display = company.contact_info_hidden ? 'flex' : 'none';
+}
+
 // ── COMPANY NOTES (MOBILE) ────────────────────────────────────────────────
 let currentCompanyId = null;
+
+function toggleCompanyNotesCard() {
+  const body = document.getElementById('mobile-company-notes-body');
+  const arrow = document.getElementById('mobile-company-notes-arrow');
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  arrow.textContent = isOpen ? '▶' : '▼';
+}
 
 async function loadMobileCompanyNotes(companyId) {
   if (!companyId) return;
@@ -2224,6 +2362,9 @@ async function loadMobileCompanyNotes(companyId) {
 
 function renderMobileCompanyNotes(notes, hidden_count) {
   const container = document.getElementById('mobile-company-notes-list');
+  const total = notes.length + (hidden_count || 0);
+  document.getElementById('mobile-company-notes-count').textContent =
+    total ? `${total} note${total !== 1 ? 's' : ''}` : 'No notes yet';
   let html = '';
   if (hidden_count > 0) {
     html += `<div style="background:var(--bg3);border:1px solid var(--border2);border-radius:3px;padding:6px 10px;margin-bottom:8px;display:flex;align-items:center;gap:6px">

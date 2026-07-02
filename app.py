@@ -54,10 +54,6 @@ import requests
 
 import mobile.script_mobile as mobile_ocr
 
-# we can remove the taiga stuff. keeping it just in case we want to rollback
-TAIGA_USERNAME = os.getenv("TAIGA_USERNAME")
-TAIGA_PASSWORD = os.getenv("TAIGA_PASSWORD")
-TAIGA_API_URL = "https://api.taiga.io/api/v1"
 
 ZOHO_CLIENT_ID = os.getenv("ZOHO_CLIENT_ID")
 ZOHO_CLIENT_SECRET = os.getenv("ZOHO_CLIENT_SECRET")
@@ -265,99 +261,6 @@ def get_people_for_company(company_id):
         cur.execute("SELECT * FROM people WHERE company_id = %s", (company_id,))
         return cur.fetchall()
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Taiga helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-# def get_taiga_token():
-#     res = requests.post(f"{TAIGA_API_URL}/auth", json={
-#         "type": "normal",
-#         "username": TAIGA_USERNAME,
-#         "password": TAIGA_PASSWORD,
-#     })
-#     data = res.json()
-#     return data.get("auth_token")
-
-
-# # def get_taiga_project_id(token):
-# #     res = requests.get(
-# #         f"{TAIGA_API_URL}/projects/by_slug%sslug={TAIGA_PROJECT_SLUG}",
-# #         headers={"Authorization": f"Bearer {token}"}
-# #     )
-# #     return res.json().get("id")
-
-
-# def taiga_create_issue(title, description, project_id, due_date=None):
-#     token = get_taiga_token()
-#     if not token:
-#         return None, "Failed to authenticate with Taiga", None
-
-#     payload = {
-#         "project": project_id,
-#         "subject": title,
-#         "description": description or "",
-#     }
-#     if due_date:
-#         payload["due_date"] = due_date
-
-#     res = requests.post(
-#         f"{TAIGA_API_URL}/userstories",
-#         json=payload,
-#         headers={"Authorization": f"Bearer {token}"}
-#     )
-#     data = res.json()
-#     if res.status_code == 201:
-#         return data.get("ref"), None, data.get("id")
-#     else:
-#         return None, data, None
-
-# # Slug helpers
-
-# def make_project_slug(company_name):
-#     slug = company_name.lower()
-#     slug = re.sub(r'[^a-z0-9]+', '-', slug)
-#     slug = slug.strip('-')
-#     return f"yl-{slug}"
-
-
-# def get_or_create_taiga_project(company_id, company_name, token):
-    # conn = get_db()
-    # row = conn.execute(
-    #     "SELECT taiga_project_id, taiga_project_slug FROM companies WHERE id = %s",
-    #     (company_id,)
-    # ).fetchone()
-    # close_db(conn)
-
-    # if row and row["taiga_project_id"] and row["taiga_project_slug"]:
-    #     return row["taiga_project_id"], row["taiga_project_slug"], None
-
-    # # create new project
-    # res = requests.post(
-    #     f"{TAIGA_API_URL}/projects",
-    #     json={
-    #         "name": company_name,
-    #         "description": f"YantraLive project for {company_name}",
-    #         "is_private": True,
-    #     },
-    #     headers={"Authorization": f"Bearer {token}"}
-    # )
-
-    # if res.status_code != 201:
-    #     return None, None, f"Failed to create Taiga project: {res.text}"
-
-    # data = res.json()
-    # project_id = data.get("id")
-    # project_slug = data.get("slug")
-
-    # conn = get_db()
-    # conn.execute(
-    #     "UPDATE companies SET taiga_project_id = %s, taiga_project_slug = %s WHERE id = %s",
-    #     (project_id, project_slug, company_id)
-    # )
-    # conn.commit()
-    # close_db(conn)
-
-    # return project_id, project_slug, None
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Zoho CRM helpers
@@ -709,6 +612,52 @@ def api_people(company_id):
     return jsonify({"hidden": False, "people": result})
 
 
+@app.route("/api/company/<int:company_id>")
+@login_required
+def api_company_detail(company_id):
+    is_admin = session.get("role") in ("admin", "superadmin")
+
+    with db_ctx() as (_, cur):
+        cur.execute("SELECT * FROM companies WHERE id = %s", (company_id,))
+        company = cur.fetchone()
+        if not company:
+            return jsonify({"error": "not found"}), 404
+
+        cur.execute("SELECT * FROM enrichment WHERE contact_id = %s", (company_id,))
+        enrichment = cur.fetchone()
+
+        cur.execute("""
+            SELECT hide_company, hide_contact_info
+            FROM company_visibility WHERE company_id = %s
+        """, (company_id,))
+        vis = cur.fetchone() or {}
+
+    hide_company = vis.get("hide_company", False)
+    hide_contact_info = vis.get("hide_contact_info", False)
+
+    if not is_admin and hide_company:
+        return jsonify({"hidden": True})
+
+    show_contact_info = is_admin or not hide_contact_info
+
+    return jsonify({
+        "hidden": False,
+        "id": company["id"],
+        "name": company["name"],
+        "company_info": company["company_info"] or "",
+        "addresses": safe_json(company["addresses"]),
+        "phones": safe_json(company["phones"]) if show_contact_info else [],
+        "emails": safe_json(company.get("emails")) if show_contact_info else [],
+        "websites": safe_json(company["websites"]),
+        "primary_industry": enrichment["primary_industry"] if enrichment else "",
+        "sub_industry": enrichment["sub_industry"] if enrichment else "",
+        "company_type": safe_json(enrichment["company_type"]) if enrichment else [],
+        "products": safe_json(enrichment["products"]) if enrichment else [],
+        "markets": safe_json(enrichment["markets"]) if enrichment else [],
+        "contact_info_hidden": (not is_admin) and hide_contact_info,
+    })
+
+
 @app.route("/api/stats")
 @login_required
 def api_stats():
@@ -899,83 +848,6 @@ def enrich_single():
     t.start()
     return jsonify({"job_id": job_id})
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Taiga routes
-# ─────────────────────────────────────────────────────────────────────────────
-
-# some taiga thing
-
-# @app.route("/api/tasks/<int:task_id>/push-taiga", methods=["POST"])
-# def push_to_taiga(task_id):
-#     conn = get_db()
-#     task = conn.execute("""
-#         SELECT t.*, c.name as company_name
-#         FROM tasks t
-#         LEFT JOIN companies c ON c.id = t.company_id
-#         WHERE t.id = %s
-#     """, (task_id,)).fetchone()
-#     close_db(conn)
-
-#     if not task:
-#         return jsonify({"error": "task not found"}), 404
-
-#     token = get_taiga_token()
-#     if not token:
-#         return jsonify({"error": "Failed to authenticate with Taiga"}), 500
-
-#     project_id, project_slug, error = get_or_create_taiga_project(
-#         task["company_id"], task["company_name"], token
-#     )
-#     if error:
-#         return jsonify({"error": error}), 500
-
-#     ref, error, taiga_id = taiga_create_issue(
-#         title=task["title"],
-#         description=task["description"],
-#         project_id=project_id,
-#         due_date=task["due_date"],
-#     )
-#     if error:
-#         return jsonify({"error": error}), 500
-
-#     url = f"https://tree.taiga.io/project/{project_slug}/us/{ref}"
-#     return jsonify({"ok": True, "url": url, "ref": ref})
-
-# @app.route("/api/tasks/<int:task_id>/push-taiga", methods=["POST"])
-# def push_to_taiga(task_id):
-#     conn = get_db()
-#     task = conn.execute("""
-#         SELECT t.*, c.name as company_name
-#         FROM tasks t
-#         LEFT JOIN companies c ON c.id = t.company_id
-#         WHERE t.id = %s
-#     """, (task_id,)).fetchone()
-#     close_db(conn)
-
-#     if not task:
-#         return jsonify({"error": "task not found"}), 404
-
-#     token = get_taiga_token()
-#     if not token:
-#         return jsonify({"error": "Failed to authenticate with Taiga"}), 500
-
-#     project_id, project_slug, error = get_or_create_taiga_project(
-#         task["company_id"], task["company_name"], token
-#     )
-#     if error:
-#         return jsonify({"error": error}), 500
-
-#     ref, error, taiga_id = taiga_create_issue(
-#         title=task["title"],
-#         description=task["description"],
-#         project_id=project_id,
-#         due_date=task["due_date"],
-#     )
-#     if error:
-#         return jsonify({"error": error}), 500
-
-#     url = f"https://tree.taiga.io/project/{project_slug}/us/{ref}"
-#     return jsonify({"ok": True, "url": url, "ref": ref})
 
 # ─────────────────────────────────────────────────────────────────────────────
 # zoho routes
@@ -1425,7 +1297,7 @@ def api_people_search():
             if session.get("role") in ("admin", "superadmin"):
                 cur.execute("""
                     SELECT DISTINCT p.id, p.name, p.role, p.phones, p.emails,
-                        c.name as company_name,
+                        c.id as company_id, c.name as company_name,
                         pn.note as matched_note, pn.created_at, u.username
                     FROM people p
                     JOIN companies c ON c.id = p.company_id
@@ -1437,7 +1309,7 @@ def api_people_search():
             else:
                 cur.execute("""
                     SELECT DISTINCT p.id, p.name, p.role, p.phones, p.emails,
-                        c.name as company_name,
+                        c.id as company_id, c.name as company_name,
                         pn.note as matched_note, pn.created_at, u.username
                     FROM people p
                     JOIN companies c ON c.id = p.company_id
@@ -1449,7 +1321,7 @@ def api_people_search():
         elif field == "people":
             cur.execute("""
                 SELECT p.id, p.name, p.role, p.phones, p.emails,
-                       c.name as company_name,
+                       c.id as company_id, c.name as company_name,
                        NULL as matched_note, NULL as created_at, NULL as username
                 FROM people p
                 JOIN companies c ON c.id = p.company_id
@@ -1459,7 +1331,7 @@ def api_people_search():
         elif field == "products":
             cur.execute("""
                 SELECT DISTINCT p.id, p.name, p.role, p.phones, p.emails,
-                       c.name as company_name,
+                       c.id as company_id, c.name as company_name,
                        e.products as matched_note, NULL as created_at, NULL as username
                 FROM people p
                 JOIN companies c ON c.id = p.company_id
