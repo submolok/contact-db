@@ -682,6 +682,7 @@ async function loadUsers() {
       <td><span class="role-badge role-${u.role}">${u.role}</span></td>
       <td style="font-family:var(--mono);font-size:0.7rem">${u.created_at.split('T')[0]}</td>
       <td style="text-align:right">
+        ${u.role !== 'superadmin' ? `<button class="btn" onclick="openResetPasswordModal(${u.id}, '${esc(u.username)}')" style="margin-right:6px">Reset Password</button>` : ''}
         <button class="btn btn-danger" onclick="deleteUser(${u.id}, '${esc(u.username)}')">Delete</button>
       </td>
     </tr>
@@ -726,6 +727,67 @@ async function deleteUser(id, username) {
     return;
   }
   loadUsers();
+}
+
+function openResetPasswordModal(id, username) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.onclick = e => { if (e.target === overlay) closeModal(); };
+
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:400px">
+      <div class="modal-header">
+        <div class="modal-title">Reset Password: ${esc(username)}</div>
+        <button class="btn" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group" style="margin-bottom:12px">
+          <label class="form-label">New Password</label>
+          <input class="form-input" type="password" id="reset-password" style="width:100%">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm Password</label>
+          <input class="form-input" type="password" id="reset-password-confirm" style="width:100%">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="status-msg" id="reset-password-status" style="margin:0;flex:1;display:none"></div>
+        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveResetPassword(${id})">Save</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+}
+
+async function saveResetPassword(id) {
+  const password = document.getElementById('reset-password').value;
+  const confirmPassword = document.getElementById('reset-password-confirm').value;
+
+  if (!password) {
+    showStatus('reset-password-status', 'error', 'Password cannot be empty.');
+    return;
+  }
+  if (password !== confirmPassword) {
+    showStatus('reset-password-status', 'error', 'Passwords do not match.');
+    return;
+  }
+
+  const res = await fetch(`/api/admin/users/${id}/password`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  const data = await res.json();
+
+  if (!res.ok) {
+    showStatus('reset-password-status', 'error', data.error || 'Failed to reset password.');
+    return;
+  }
+
+  showStatus('reset-password-status', 'success', 'Password updated.');
+  setTimeout(closeModal, 900);
 }
 
 async function logout() {

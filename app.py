@@ -446,6 +446,29 @@ def api_delete_user(user_id):
         conn.commit()
     return jsonify({"ok": True})
 
+@app.route("/api/admin/users/<int:user_id>/password", methods=["PATCH"])
+@admin_required
+def api_reset_user_password(user_id):
+    data = request.json or {}
+    password = data.get("password", "")
+
+    if not password:
+        return jsonify({"error": "password required"}), 400
+
+    with db_ctx() as (conn, cur):
+        cur.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+        user = cur.fetchone()
+
+        if not user:
+            return jsonify({"error": "user not found"}), 404
+
+        if user["role"] == "superadmin":
+            return jsonify({"error": "Superadmin passwords cannot be changed from the dashboard"}), 403
+
+        cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (generate_password_hash(password), user_id))
+        conn.commit()
+    return jsonify({"ok": True})
+
 @app.route("/api/admin/export", methods=["GET"])
 @admin_required
 def api_export_db():
