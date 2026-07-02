@@ -916,6 +916,7 @@ select.field-input {
     <button onclick="backToContacts()" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--text3);font-family:var(--mono);font-size:0.7rem;cursor:pointer;margin-bottom:16px;padding:0">
       ← Back
     </button>
+    <div id="person-card-wrap">
     <div class="result-card">
       <div class="result-card-header">
         <div>
@@ -989,6 +990,7 @@ select.field-input {
           </div>
         </div>
       </div>
+    </div>
     </div>
     <!-- Company Details -->
     <div id="mobile-company-details-section" style="margin-top:16px;display:none">
@@ -1617,22 +1619,61 @@ async function selectCompany(companyId, companyName) {
     const res = await fetch(`/api/company/${companyId}/people`);
     const data = await res.json();
     if (data.hidden) {
-      document.getElementById('contacts-people-list').innerHTML =
-        '<div class="empty"><p style="display:flex;align-items:center;gap:6px"><span>🔒</span> Employee information is restricted</p></div>';
+      document.getElementById('contacts-people-list').innerHTML = `
+        <div class="empty"><p style="display:flex;align-items:center;gap:6px"><span>🔒</span> Employee information is restricted</p></div>
+        ${companyCardHtml(companyId, companyName, 'View company details & notes')}
+      `;
       return;
     }
-    renderContactsPeople(data.people || [], companyName);
+    renderContactsPeople(data.people || [], companyName, companyId);
   } catch(e) {
     document.getElementById('contacts-people-list').innerHTML =
       '<div class="empty"><p>Error loading contacts</p></div>';
   }
 }
 
-function renderContactsPeople(people, companyName) {
+function companyCardHtml(companyId, companyName, subtitle) {
+  return `
+    <div class="person-card" onclick="openCompanyOnly(${companyId}, '${esc(companyName)}')" style="cursor:pointer">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div class="person-name">${esc(companyName)}</div>
+          <div class="person-role">${esc(subtitle)}</div>
+        </div>
+        <span style="color:var(--text3);font-size:0.8rem">›</span>
+      </div>
+    </div>
+  `;
+}
+
+async function openCompanyOnly(companyId, companyName) {
+  currentPersonId = null;
+
+  document.getElementById('person-card-wrap').style.display = 'none';
+
+  document.getElementById('contacts-list-view').style.display = 'none';
+  document.getElementById('contacts-person-view').style.display = 'block';
+  document.getElementById('access-request-wrap').style.display = 'none';
+
+  document.getElementById('mobile-company-notes-section').style.display = 'none';
+  document.getElementById('mobile-company-notes-body').style.display = 'none';
+  document.getElementById('mobile-company-notes-arrow').textContent = '▶';
+  document.getElementById('mobile-company-details-section').style.display = 'none';
+  document.getElementById('mobile-company-details-body').style.display = 'none';
+  document.getElementById('mobile-company-details-arrow').textContent = '▶';
+
+  loadMobileCompanyNotes(companyId);
+  loadMobileCompanyDetails(companyId);
+}
+
+function renderContactsPeople(people, companyName, companyId) {
   const container = document.getElementById('contacts-people-list');
 
   if (!people.length) {
-    container.innerHTML = '<div class="empty"><p>No contacts for this company.</p></div>';
+    container.innerHTML = `
+      <div class="empty"><p>No contacts for this company.</p></div>
+      ${companyCardHtml(companyId, companyName, 'View company details & notes')}
+    `;
     return;
   }
 
@@ -1656,6 +1697,7 @@ function renderContactsPeople(people, companyName) {
 async function openPersonView(person) {
   currentPersonId = person.id;
 
+  document.getElementById('person-card-wrap').style.display = 'block';
   document.getElementById('person-view-name').textContent = person.name || '—';
   document.getElementById('person-view-role').textContent = person.role || '';
 
